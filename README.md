@@ -78,6 +78,8 @@ flowchart TB
 - Sub-sessions don't talk to each other by default; they coordinate through **contract files** the butler writes up front.
 - You can open any sub-session to watch or step in at any time — but you don't have to.
 
+To see it in practice, [examples/en/](examples/en/README.md) is a real run: every message the butler sent, and the ledger, tickets and contract it left behind.
+
 ### Lifecycle of a ticket
 
 ```mermaid
