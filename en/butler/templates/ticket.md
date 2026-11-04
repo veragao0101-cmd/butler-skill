@@ -22,7 +22,7 @@
 
 ## Executor
 
-(sub-session link and session id, or "subagent")
+(sub-session link and session id; or "subagent" plus its agent ID)
 
 ## Log
 
