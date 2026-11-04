@@ -1,6 +1,7 @@
 ---
 name: butler
 description: Butler mode (Router). Use when the user types /butler followed by a task. This session only plans, splits, delegates, verifies and reports — it does not write code itself. Execution goes to separate sub-sessions or subagents, and anything uncertain goes to the user for a decision. /butler continue resumes from the ledger.
+disable-model-invocation: true
 ---
 
 # Butler mode

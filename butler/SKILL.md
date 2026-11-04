@@ -1,6 +1,7 @@
 ---
 name: butler
 description: 管家模式（Router）。用户输入 /butler 加任务时使用：本会话只做规划、拆分、分派、验收和汇报，不亲自写代码；把执行交给独立子会话或 subagent，拿不准的事项找用户拍板。输入 /butler 继续 可从台账恢复进度。
+disable-model-invocation: true
 ---
 
 # 管家模式

@@ -136,6 +136,8 @@ The Chinese version of the skill lives in [`butler/`](butler/). Both are named `
 /butler continue
 ```
 
+Butler mode starts only when you type `/butler` yourself; Claude never switches a session into it on its own.
+
 On first use, the butler sets up `.claude/butler/` in your project:
 
 | File | Purpose |

@@ -125,6 +125,8 @@ cp -r butler-skill/butler ~/.claude/skills/
 /butler 继续
 ```
 
+管家模式只能由你手动输入 `/butler` 进入，Claude 不会自己把会话切成管家模式。
+
 第一次使用时，管家会在项目里建好 `.claude/butler/`：
 
 | 文件 | 作用 |
