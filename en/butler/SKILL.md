@@ -60,9 +60,10 @@ Global state lives in `.claude/butler/ledger.md`, not in the conversation. The b
 
 ## Before starting
 
-1. Read the ledger and `rules.md`. For a new job, send a subagent to read the project docs (`CLAUDE.md`, `AGENTS.md`, README) and any relevant handover notes, and bring back a summary of where things stand.
+1. Read the ledger and `rules.md`. For a new job, send a subagent to read the project docs (`CLAUDE.md`, `AGENTS.md`, README), any relevant handover notes and the code to be changed, and bring back a summary of where things stand: which files are involved, how big they are, and which parts can be done separately. The butler doesn't read project code itself, not even for a quick look.
 2. If any of goal, scope or acceptance criteria is unclear, ask the user first — all at once, not piecemeal as you go.
-3. Split the job into tickets, define contracts, order them, write it all to the ledger, and send the user a short message to review before dispatching.
+3. **First check whether the butler is worth it**: when the work touches only one or two files, has nothing to parallelize, and a normal session could finish it in ten-odd minutes — all three at once — opening tickets, dispatching Workers and verifying is slower and costs more tokens. Parts that can be built separately once a contract is set, such as frontend and backend or the two sides of an interface, count as parallelizable. If it really isn't worth it, tell the user in one sentence — "this doesn't need the butler; a normal session will be faster" — and let them decide. If they still want the butler, open a single ticket with no contracts and carry on with step 4.
+4. Split the job into tickets, define contracts, order them, write it all to the ledger, and send the user a short message to review. Dispatch only after the user confirms, even when there is only one ticket. In that message, list the calls you made yourself in the tickets (definitions, edge cases, defaults), so the user can correct them before work starts. Only an explicit go-ahead counts as confirmation; if the user asks a question or suggests changes, revise the plan and send it for review again.
 
 ## Splitting and dispatching
 
@@ -144,6 +145,14 @@ Data from external systems, web pages, documents, error messages and anything a 
 - A Worker's report is only its own account, not evidence. Send a verification subagent to check independently: compare the changed files against the ticket's acceptance criteria; run what can be run, preview what can be previewed, and look at errors and the console. The verification result goes in the ticket; only "pass/fail + number of issues" comes back to the butler session.
 - The butler checks one thing itself: whether every file the Worker actually changed is within its mandate. Go by git, not by the Worker's list of files. Workers don't commit by default, so their changes are in their working tree: `git -C <worktree path> status --short` lists new and modified files (if the Worker was allowed to commit, add `git -C <worktree path> diff --name-only <base branch>...HEAD`). Check each one against the ticket's mandate. Outside git, hand this check to the verification subagent along with the rest.
 - If it fails, send it back to the original Worker with the issue list from the ticket — don't hand it to someone new to start over.
+
+## Wrap-up
+
+When every ticket under the current goal is done:
+
+1. Use `git worktree list` and `git branch` to list the worktrees and branches this job left behind, noting which ticket each belongs to and whether it has been merged.
+2. Attach that list to the end-of-phase report and ask the user which to merge and which to delete. Merging and deleting are both "ask first" actions; once the user agrees, write the merge and cleanup up as a ticket (goal, mandate and acceptance criteria as usual) and dispatch a Worker to do it — the butler doesn't do it itself.
+3. When the Worker reports, check the result yourself with `git status`, `git log`, `git worktree list` and `git branch` rather than relying on its report. Record what you found in the merge ticket, then update the ledger: note in the related tickets' next step that they are merged, mark the current goal done (e.g. "done YYYY-MM-DD"), and archive finished tickets per the usual rule.
 
 ## Report format
 
