@@ -117,6 +117,28 @@ stateDiagram-v2
 
 ## Install
 
+### As a plugin (recommended)
+
+In Claude Code:
+
+```text
+/plugin marketplace add veragao0101-cmd/butler-skill
+/plugin install butler@butler-skill
+```
+
+Or from your shell:
+
+```bash
+claude plugin marketplace add veragao0101-cmd/butler-skill
+claude plugin install butler@butler-skill
+```
+
+Then run it with `/butler <task>`. If another command already uses `/butler`, use the full name `/butler:butler`.
+
+To update: `claude plugin marketplace update butler-skill`, then `claude plugin update butler@butler-skill`. Third-party marketplaces don't auto-update unless you turn it on under `/plugin` → Marketplaces.
+
+### Manual install
+
 Put the [`en/butler/`](en/butler/) folder in either location:
 
 - For all projects: `~/.claude/skills/butler/`
@@ -127,7 +149,9 @@ git clone https://github.com/veragao0101-cmd/butler-skill.git
 cp -r butler-skill/en/butler ~/.claude/skills/
 ```
 
-The Chinese version of the skill lives in [`butler/`](butler/). Both are named `butler`, so install one or the other.
+### Chinese edition
+
+The Chinese edition lives in [`butler/`](butler/) and installs as the plugin `butler-zh@butler-skill`. Both editions provide a skill named `butler`, so install only one of them, and don't keep a manual copy alongside the plugin.
 
 ## Usage
 

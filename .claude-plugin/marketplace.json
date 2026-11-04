@@ -1,0 +1,38 @@
+{
+  "name": "butler-skill",
+  "description": "Butler mode for Claude Code: the session plans, splits, delegates, verifies and reports, and hands execution to sub-sessions or subagents. English and Chinese editions.",
+  "owner": {
+    "name": "veragao0101-cmd",
+    "url": "https://github.com/veragao0101-cmd"
+  },
+  "plugins": [
+    {
+      "name": "butler",
+      "source": "./en/butler",
+      "displayName": "Butler",
+      "description": "Butler mode (Router), English edition. The session only plans, splits, delegates, verifies and reports; execution goes to sub-sessions or subagents, and uncertain calls go to you. Uses English file names under .claude/butler/.",
+      "author": {
+        "name": "veragao0101-cmd"
+      },
+      "homepage": "https://github.com/veragao0101-cmd/butler-skill#readme",
+      "repository": "https://github.com/veragao0101-cmd/butler-skill",
+      "license": "MIT",
+      "keywords": ["butler", "router", "delegation", "subagents", "orchestration"],
+      "category": "productivity"
+    },
+    {
+      "name": "butler-zh",
+      "source": "./butler",
+      "displayName": "Butler（中文）",
+      "description": "管家模式（Router）中文版。本会话只做规划、拆分、分派、验收和汇报，执行交给子会话或 subagent，拿不准的事项找你拍板。.claude/butler/ 下使用中文文件名。",
+      "author": {
+        "name": "veragao0101-cmd"
+      },
+      "homepage": "https://github.com/veragao0101-cmd/butler-skill/blob/main/README.zh-CN.md",
+      "repository": "https://github.com/veragao0101-cmd/butler-skill",
+      "license": "MIT",
+      "keywords": ["butler", "router", "delegation", "subagents", "orchestration", "chinese"],
+      "category": "productivity"
+    }
+  ]
+}

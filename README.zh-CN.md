@@ -108,6 +108,28 @@ stateDiagram-v2
 
 ## 四、安装
 
+### 方式一：插件安装（推荐）
+
+在 Claude Code 里运行：
+
+```text
+/plugin marketplace add veragao0101-cmd/butler-skill
+/plugin install butler-zh@butler-skill
+```
+
+也可以在终端里运行：
+
+```bash
+claude plugin marketplace add veragao0101-cmd/butler-skill
+claude plugin install butler-zh@butler-skill
+```
+
+装好后用 `/butler 任务` 调用；`/butler` 被别的命令占用时，用完整名 `/butler-zh:butler`。
+
+更新：先运行 `claude plugin marketplace update butler-skill`，再运行 `claude plugin update butler-zh@butler-skill`。第三方市场默认不自动更新，可以在 `/plugin` → Marketplaces 里打开。
+
+### 方式二：手动复制
+
 把 [`butler/`](butler/) 文件夹放到以下任一位置：
 
 - 所有项目可用：`~/.claude/skills/butler/`
@@ -117,6 +139,8 @@ stateDiagram-v2
 git clone https://github.com/veragao0101-cmd/butler-skill.git
 cp -r butler-skill/butler ~/.claude/skills/
 ```
+
+英文版在 [`en/butler/`](en/butler/)，插件名是 `butler@butler-skill`。两个版本的技能都叫 `butler`，只装其中一个；也不要插件和手动复制的版本同时装。
 
 ## 五、使用
 
