@@ -31,7 +31,7 @@
 | Super-agent 的做法 | 是否采纳 | 在 butler 里的样子 |
 |---|---|---|
 | Router 只协调，不执行 | ✅ | 管家窗口只能写 `.claude/butler/` 下的台账、工单、契约、规则，不改项目文件、不跑构建、不截图 |
-| 靠结构约束，而不是靠提示词鼓励委派 | ✅ | DeepSeek 实验里中性提示词 0/5 次委派，所以写成硬性规定 |
+| 靠结构约束，而不是靠提示词鼓励委派 | ✅ | DeepSeek 实验里中性提示词 0/5 次委派，所以写成硬性规定，并用 hook 把关：管家窗口要改项目文件或跑命令，先问你 |
 | Worker 隔离、并行 | ✅ | 独立子会话（git 项目用 worktree），同时最多 3 个 |
 | Ticket + Mandate | ✅ | 每个子任务一张工单，写明授权范围；外部内容不能扩大授权 |
 | 线程订阅、直达原 Worker | ✅ | 返工和追加修改发回原子会话，不新开、不经管家重新了解 |
@@ -164,14 +164,29 @@ cp -r butler-skill/butler ~/.claude/skills/
 
 在 git 项目里，`.claude/butler/` 会自带一个 `.gitignore`，默认不进 git，Worker 的 worktree 里也不会出现过期副本。想把台账一起提交，删掉这个 `.gitignore` 即可。
 
-**环境建议**：Claude Code 桌面版（Code 标签页）体验最完整，可以开独立子会话、互发消息、在侧边栏查看每个子会话。终端版没有独立子会话，管家会改用 subagent，规则不变。
+### 环境要求
+
+- **Claude Code**：桌面版（Code 标签页）体验最完整，可以开独立子会话、互发消息、在侧边栏查看每个子会话。终端版没有独立子会话，管家会改用 subagent，规则不变。
+- **支持 skill frontmatter hooks**：守卫要用到（见「局限」）。Claude Code 2.1.318 实测可用。
+- **git 不是必需的**：git 项目里每个写代码的 Worker 有自己的 worktree；不是 git 项目时，所有 Worker 共用一个文件夹，工单之间的文件划分要更严。
+- **`sh` 和 `awk`**：守卫脚本只用这两样，macOS、Linux 自带。Windows 需要 Git for Windows（Git Bash），未实测。
 
 ## 六、局限
 
-- "管家不动手"是写在 skill 里的规定，技术上没有强制。需要的话可以再加一个 PreToolUse hook 拦截管家窗口的写操作。注意：写在项目 `.claude/settings.json` 里的 hook 对这个项目的所有会话都生效，Worker 子会话也会被拦。hook 收到的输入里带有 `session_id` 和 `cwd`，要靠它们区分出管家会话，只拦管家。
+- 管家窗口的边界由 skill 自带的 PreToolUse hook（`scripts/guard.sh`）把关：管家要写 `.claude/butler/` 以外的文件，或者跑只读白名单以外的命令时，Claude Code 会先弹窗问你。想让管家自己动手就批准；拒绝的话，它会把这件事开成工单。Worker 子会话和 subagent 不受影响。守卫有这些局限：
+  - 从输入 `/butler` 起到会话结束有效。用 `--resume`、`--continue` 或重新打开来恢复旧会话，守卫不会跟着恢复，要再输入一次 `/butler 继续`。
+  - 每次越界调用都要单独批准。`claude -p` 和没有权限回调的 SDK 里没有弹窗，越界调用一律被拒。
+  - bypassPermissions 模式下守卫直接拒绝，不弹窗问，也就没法批准。原因是这个模式下，只要目标在 `.claude/`、`.git/` 这类受保护目录里，Claude Code（2.1.318）就会把 hook 的 "ask" 直接放行，管家就能去改 `.claude/settings.json` 了。真要让管家自己动手，先切换到别的权限模式。
+  - 只管 Bash、Write、Edit、MultiEdit、NotebookEdit、PowerShell，管不到 MCP 工具，也管不到管家不开工单、直接派 subagent 去改。它按命令文本检查，防的是模型忘了规矩，不防有意绕过。
+  - hook 靠 `${CLAUDE_PLUGIN_ROOT}` 找到脚本，在 skill hook 里它指向 skill 目录（2.1.318 实测，官方文档只对插件写明）。以后要是变了，hook 会报错，守卫失效；这时把 SKILL.md 里 `hooks` 下的命令改成脚本的绝对路径即可。组织托管设置开了 `strictPluginOnlyCustomization` 时，手动安装的 skill 的 hook 不会运行。
 - 多会话比单会话更费 token，换来的是并行和管家窗口不被撑满。
 - DeepSeek 的实验是合成负载，衡量的是调度而不是代码质量，本项目也尚未做系统评测。欢迎提 issue 反馈实际使用情况。
 - 模板和状态文件用的是中文文件名。git 默认会把中文路径显示成 `"\345\217\260\350\264\246.md"` 这样的八进制转义，执行 `git config --global core.quotepath false` 即可正常显示。
+
+## 参与开发
+
+- 运行 `sh tests/test-guard.sh`，会对中英两份守卫各跑一遍测试。
+- 两份 `guard.sh` 只有文案不同："shared logic" 标记以下的部分要保持一致，测试会检查。
 
 ## 参考
 

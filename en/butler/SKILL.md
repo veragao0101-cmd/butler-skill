@@ -1,5 +1,11 @@
 ---
 name: butler
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit|PowerShell"
+      hooks:
+        - type: command
+          command: "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh\""
 description: Butler mode (Router). Use when the user types /butler followed by a task. This session only plans, splits, delegates, verifies and reports — it does not write code itself. Execution goes to separate sub-sessions or subagents, and anything uncertain goes to the user for a decision. /butler continue resumes from the ledger.
 disable-model-invocation: true
 ---
@@ -21,9 +27,13 @@ The first time you are used in a project, if `.claude/butler/` does not exist:
 Prompting a model to "delegate more" is not reliable — it often does the work itself. So these are hard rules:
 
 - **The butler session writes only files under `.claude/butler/`**: the ledger, tickets, contracts and rules. Project code, pages and data files are never edited in this session.
-- **The butler session runs no execution commands**: no servers, builds, tests, data scripts or screenshots. Only two kinds of read-only inspection are allowed: `ls`, `cat` and the like on files under `.claude/butler/`; and git queries that don't change the repository (`git status`, `git diff --stat`, `git diff --name-only`, `git log`, `git branch`, `git worktree list`, optionally with `-C <worktree path>`), to check which files a Worker actually changed and where each branch is. Git commands that change the repository — `checkout`, `switch`, `merge`, `commit`, `stash`, `reset` and the like — are not allowed.
+- **The butler session runs no execution commands**: no servers, builds, tests, data scripts or screenshots. Only two kinds of read-only inspection are allowed: `ls`, `cat` and the like on files under `.claude/butler/`; and git queries that don't change the repository (`git status`, `git diff --stat`, `git diff --name-only`, `git log`, `git show --stat`, `git ls-files`, `git branch`, `git worktree list`, optionally with `-C <worktree path>`), to check which files a Worker actually changed and where each branch is. Git commands that change the repository — `checkout`, `switch`, `merge`, `commit`, `stash`, `reset` and the like — are not allowed.
 - **When you feel like doing it yourself**: that means it is a ticket — dispatch it. The only exception is when the user explicitly says in this session "just change it yourself".
 - **Workers don't contact the user directly**: questions, problems found, work finished — Workers report all of it to you, and you decide whether to handle it or escalate to the user.
+
+A hook backs up the first two rules: this skill's frontmatter registers a PreToolUse hook (`scripts/guard.sh`) that stays active in this session once `/butler` is typed. Writing a file outside `.claude/butler/`, or running a command not listed above, makes Claude Code ask the user first instead of running it. If the user said "just change it yourself", they approve; otherwise they deny it, and you turn the work into a ticket. In bypassPermissions mode there is no way to ask, so the guard refuses outright. Calls inside subagents are not affected. When a write or an execution command is held back, don't try another tool or command to do the same thing.
+
+The guard checks command text, so keep commands plain: one thing per command, literal paths, no variables or `$(...)`. If a read-only query was held back only because of how it was written (a variable, say), rewrite it plainly and run it again. Create the ledger, tickets and other state files with the file-writing tool, or with `mkdir -p`, `cp` or `>` into `.claude/butler/`.
 
 ## Tickets and mandates
 

@@ -1,5 +1,11 @@
 ---
 name: butler
+hooks:
+  PreToolUse:
+    - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit|PowerShell"
+      hooks:
+        - type: command
+          command: "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh\""
 description: 管家模式（Router）。用户输入 /butler 加任务时使用：本会话只做规划、拆分、分派、验收和汇报，不亲自写代码；把执行交给独立子会话或 subagent，拿不准的事项找用户拍板。输入 /butler 继续 可从台账恢复进度。
 disable-model-invocation: true
 ---
@@ -21,9 +27,13 @@ disable-model-invocation: true
 只靠提示词鼓励"多委派"并不可靠，模型常常自己动手。所以这里写成硬性规定：
 
 - **管家窗口只允许写 `.claude/butler/` 下的文件**：台账、工单、契约、规则。项目代码、页面、数据文件一律不在本窗口里改。
-- **管家窗口不运行执行性命令**：不起服务器、不跑构建或测试、不跑数据脚本、不截图。只允许两类只读查看：一是对 `.claude/butler/` 下的文件用 `ls`、`cat` 这类命令；二是不改变仓库的 git 查询（`git status`、`git diff --stat`、`git diff --name-only`、`git log`、`git branch`、`git worktree list`，可以加 `-C <worktree 路径>`），用来核对 Worker 实际改了哪些文件、各分支在哪。`checkout`、`switch`、`merge`、`commit`、`stash`、`reset` 这类会改变仓库的 git 命令不在其列。
+- **管家窗口不运行执行性命令**：不起服务器、不跑构建或测试、不跑数据脚本、不截图。只允许两类只读查看：一是对 `.claude/butler/` 下的文件用 `ls`、`cat` 这类命令；二是不改变仓库的 git 查询（`git status`、`git diff --stat`、`git diff --name-only`、`git log`、`git show --stat`、`git ls-files`、`git branch`、`git worktree list`，可以加 `-C <worktree 路径>`），用来核对 Worker 实际改了哪些文件、各分支在哪。`checkout`、`switch`、`merge`、`commit`、`stash`、`reset` 这类会改变仓库的 git 命令不在其列。
 - **想自己动手时**：说明这件事就是一个工单，派出去。唯一的例外是用户在本窗口里明确说"你直接改"。
 - **Worker 不直接找用户**：Worker 有疑问、发现问题、做完了，都汇报给你，由你决定是自己处理还是上报用户。
+
+前两条有 hook 把关：本 skill 的 frontmatter 注册了 PreToolUse hook（`scripts/guard.sh`），输入 `/butler` 后在本窗口一直生效。写 `.claude/butler/` 以外的文件、跑上面以外的命令时，Claude Code 会先弹窗问用户，不会直接执行。用户说过"你直接改"就会批准；否则会拒绝，你把这件事开成工单。bypassPermissions 模式下没法弹窗问，守卫会直接拒绝。subagent 里的调用不受影响。写文件或执行命令被拦下后，不要换一种工具或命令去做同一件事。
+
+守卫按命令文本核对，命令要写得直白：一次做一件事，路径写全，不用变量和 `$(...)`。只读查询只是因为写法被拦（比如用了变量），改成直白的写法重试即可。建台账、工单这类文件用写文件的工具，或者用写到 `.claude/butler/` 里的 `mkdir -p`、`cp`、`>`。
 
 ## 工单与授权
 

@@ -31,7 +31,7 @@ So this project **borrows the design principles, not the infrastructure**:
 | Super-agent practice | Adopted? | What it looks like in butler |
 |---|---|---|
 | The Router only coordinates, never executes | ✅ | The butler session writes only the ledger, tickets, contracts and rules under `.claude/butler/` — no project files, no builds, no screenshots |
-| Enforce delegation by structure, not by encouraging prompts | ✅ | With a neutral prompt, DeepSeek's experiment saw 0 delegations in 5 runs, so here it's a hard rule |
+| Enforce delegation by structure, not by encouraging prompts | ✅ | With a neutral prompt, DeepSeek's experiment saw 0 delegations in 5 runs, so here it's a hard rule, backed by a hook that asks you before the butler session writes project files or runs commands |
 | Isolated, parallel Workers | ✅ | Separate sub-sessions (worktrees in git projects), at most 3 at once |
 | Ticket + Mandate | ✅ | One ticket per subtask, with an explicit mandate; external content can't widen it |
 | Thread subscription, straight to the original Worker | ✅ | Rework and follow-ups go back to the original sub-session — no new session, no re-briefing through the butler |
@@ -175,13 +175,28 @@ On first use, the butler sets up `.claude/butler/` in your project:
 
 In git projects, `.claude/butler/` comes with its own `.gitignore`, so it stays out of git and Workers' worktrees don't get stale copies. To commit the ledger as well, just delete that `.gitignore`.
 
-**Recommended setup**: the Claude Code desktop app (Code tab) gives the fullest experience — separate sub-sessions, messages between them, and a sidebar to view each one. The terminal version has no separate sub-sessions, so the butler uses subagents instead; the rules stay the same.
+### Requirements
+
+- **Claude Code.** The desktop app (Code tab) gives the fullest experience — separate sub-sessions, messages between them, and a sidebar to view each one. The terminal version has no separate sub-sessions, so the butler uses subagents instead; the rules stay the same.
+- **Skill frontmatter hooks** for the guard (see Limitations). Verified on Claude Code 2.1.318.
+- **git is optional.** In a git repository each code-writing Worker gets its own worktree; outside git, all Workers share one folder and tickets have to split files more strictly.
+- **`sh` and `awk`** for the guard script, both built into macOS and Linux. Windows needs Git for Windows (Git Bash); not tested there.
 
 ## Limitations
 
-- "The butler doesn't do the work itself" is a rule written into the skill, not technically enforced. If you need enforcement, add a PreToolUse hook that blocks writes from the butler session. Note that a hook in the project's `.claude/settings.json` applies to every session in the project, so Worker sub-sessions would be blocked too; hook input includes `session_id` and `cwd`, which you need to use to single out the butler session.
+- The butler session's boundaries are enforced by a PreToolUse hook that ships with the skill (`scripts/guard.sh`). When the butler tries to write a file outside `.claude/butler/`, or run a command outside its read-only allowlist, Claude Code asks you first. Approve if you want the butler to do it itself; deny, and it turns the work into a ticket. Worker sub-sessions and subagents aren't affected. The guard has limits:
+  - It's active from the moment you type `/butler` until the session ends. Resuming an old session (`--resume`, `--continue`, or reopening it) doesn't bring it back; type `/butler continue` again.
+  - Every out-of-bounds call needs its own approval. `claude -p` and SDK runs without a permission handler have no prompt, so those calls are always refused.
+  - In bypassPermissions mode the guard refuses instead of asking, so the butler can't be let through at all. In that mode Claude Code (2.1.318) lets a hook's "ask" through whenever the target is in a protected folder such as `.claude/` or `.git/`, which would have let the butler edit `.claude/settings.json`. To let the butler do something itself, switch to another mode first.
+  - It covers Bash, Write, Edit, MultiEdit, NotebookEdit and PowerShell. It doesn't cover MCP tools, or the butler sending a subagent to make changes without a ticket. It checks command text, so it catches a model forgetting the rules, not deliberate evasion.
+  - The hook finds its script through `${CLAUDE_PLUGIN_ROOT}`, which points at the skill folder in skill hooks (verified on 2.1.318; the docs describe it only for plugins). If that changes, the hook errors out and the guard is off; replace the command under `hooks` in SKILL.md with the script's absolute path. Under the managed setting `strictPluginOnlyCustomization`, hooks of manually installed skills don't run.
 - Multiple sessions cost more tokens than one; in exchange you get parallelism and a butler session that doesn't fill up.
 - DeepSeek's experiments used synthetic workloads and measured scheduling, not code quality, and this project hasn't been systematically evaluated yet either. Issues with real-world feedback are welcome.
+
+## Development
+
+- `sh tests/test-guard.sh` runs the guard tests against both editions.
+- The two `guard.sh` copies differ only in their messages: keep everything below the "shared logic" marker identical (the tests check this).
 
 ## References
 

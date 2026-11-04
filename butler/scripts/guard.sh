@@ -1,0 +1,425 @@
+#!/bin/sh
+# 管家守卫：SKILL.md 里 hooks 字段注册的 PreToolUse hook。
+#
+# 用户输入 /butler 之后，Claude Code 在本会话主线程每次调用 Bash、Write、Edit、
+# MultiEdit、NotebookEdit、PowerShell 之前运行这个脚本，把调用信息（JSON）从 stdin 传进来。
+# - 写文件：目标在 <项目根>/.claude/butler/ 里才放行。
+# - Bash：只放行「角色边界」里列的只读查看命令；复合命令每一段都要在白名单里。
+#   输出重定向、mkdir、cp 只能写到 .claude/butler/ 里。
+# - subagent 里的调用（输入带 agent_id）一律不管。
+# 不放行时返回 "ask"：Claude Code 弹出权限确认，由用户决定。用户说过"你直接改"就批准，
+# 否则拒绝。bypassPermissions 模式下改为返回 "deny"：这个模式下，目标在 .claude/、.git/
+# 这类受保护目录里时，Claude Code（2.1.318）会把 hook 的 "ask" 直接放行。放行时什么都不输出，照常走 Claude Code 自己的权限流程（不额外授权）。
+#
+# 只用 POSIX sh 和 awk，macOS、Linux 不需要另装任何东西。
+
+# ---- 文案（中文版） ----
+M_PREFIX='管家守卫：'
+M_SEP=''
+M_TICKET='请把这件事开成工单派给 Worker。'
+M_FORM='如果这一步只是写 .claude/butler/ 里的文件或只读查询，换成直白写法再试（用写文件的工具，或路径写全、不用变量、heredoc 和 $(...)）；否则请把这件事开成工单派给 Worker。'
+M_ASK='这一步要用户在确认框里亲自批准：用户在本窗口明确说过"你直接改"才批准，否则拒绝。'
+M_DENY='当前是 bypassPermissions 模式，守卫没法弹窗问用户，只能直接拒绝；用户真要管家自己改，得先切换到别的权限模式。'
+M_WRITE='管家窗口只能写 .claude/butler/ 下的文件，这次要写的是 '
+M_BASH='管家窗口只能跑只读查看命令，这条不行：'
+M_BASH_OK='。允许的有：ls、cat、head、tail、wc、pwd、cd、echo；git status、git diff --stat、git diff --name-only、git log、git show、git ls-files、git rev-parse、git branch、git worktree list（可加 -C <路径>）；往 .claude/butler/ 里 mkdir、cp、输出重定向。'
+M_STOP='。'
+M_PS='管家窗口不解析 PowerShell 命令，一律先问你。'
+M_PARSE='看不懂这次调用的参数，先问你。'
+
+detail() {
+  case $1 in
+    redirect) printf '输出重定向 %s' "$2" ;;
+    subst) printf '命令替换或进程替换 %s' "$2" ;;
+    subshell) printf '子 shell 或括号 %s' "$2" ;;
+    heredoc) printf 'heredoc %s' "$2" ;;
+    assign) printf '命令前带环境变量赋值 %s' "$2" ;;
+    cmd) printf '不在白名单的命令 %s' "$2" ;;
+    gitopt) printf 'git 选项 %s' "$2" ;;
+    gitsub) printf 'git %s 不是只读查询' "$2" ;;
+    gitdiff) printf 'git diff 只允许 --stat、--name-only 这类摘要' ;;
+    gitbranch) printf 'git branch %s 会新建或改动分支' "$2" ;;
+    mkdiropt | cpopt) printf '不支持的选项 %s' "$2" ;;
+    cpargs) printf 'cp 参数不完整' ;;
+    cdwrite) printf 'cd 之后再用 %s 写文件，无法核对路径' "$2" ;;
+    follow) printf 'tail %s 会一直挂着' "$2" ;;
+    unverifiable) printf '路径 %s 里有变量或通配符，无法核对' "$2" ;;
+    outside) printf '%s 不在 .claude/butler/ 里' "$2" ;;
+    long) printf '命令太长，无法检查' ;;
+    *) printf '引号不配对或语法看不懂 %s' "$2" ;;
+  esac
+}
+
+# ---- shared logic: keep identical in butler/scripts/guard.sh and en/butler/scripts/guard.sh ----
+
+unset CDPATH
+
+# Reads the hook input (one JSON object) and prints the fields the guard needs as
+# KEY<TAB>VALUE lines. The JSON is split on double quotes, so long string values
+# (e.g. Write content) are skipped without being copied or decoded. For Bash it
+# also tokenizes the command and prints "block<TAB>CODE<TAB>ARG" or one
+# "inside<TAB>PATH" line per mkdir/cp destination the shell part must check.
+AWK_PROG='
+function oddbs(s,   n, j) { n = length(s); j = n; while (j > 0 && substr(s, j, 1) == "\\") j--; return (n - j) % 2 }
+function structure(s,   k, n, ch) {
+  n = length(s)
+  for (k = 1; k <= n; k++) {
+    ch = substr(s, k, 1)
+    if (ch == "{" || ch == "[") { d++; T[d] = (ch == "{") ? "o" : "a"; K[d] = "" }
+    else if ((ch == "}" || ch == "]") && d > 0) d--
+  }
+}
+function curpath(   k, p) { p = ""; for (k = 1; k <= d; k++) p = p (k > 1 ? "." : "") (T[k] == "o" ? K[k] : "[]"); return p }
+function join(a, b,   k, s) { s = P[a]; for (k = a + 1; k <= b; k++) s = s "\"" P[k]; return s }
+function hexval(h,   k, v, c) {
+  v = 0; h = tolower(h)
+  for (k = 1; k <= 4; k++) { c = index("0123456789abcdef", substr(h, k, 1)); if (!c) return -1; v = v * 16 + c - 1 }
+  return v
+}
+function utf8(c) {
+  if (c < 128) return sprintf("%c", c)
+  if (c < 2048) return sprintf("%c%c", 192 + int(c / 64), 128 + c % 64)
+  if (c < 65536) return sprintf("%c%c%c", 224 + int(c / 4096), 128 + int(c / 64) % 64, 128 + c % 64)
+  return sprintf("%c%c%c%c", 240 + int(c / 262144), 128 + int(c / 4096) % 64, 128 + int(c / 64) % 64, 128 + c % 64)
+}
+function decode(s,   out, j, nx, h, l) {
+  out = ""
+  while ((j = index(s, "\\")) > 0) {
+    out = out substr(s, 1, j - 1); nx = substr(s, j + 1, 1); s = substr(s, j + 2)
+    if (nx == "\"" || nx == "\\" || nx == "/") out = out nx
+    else if (nx == "n") out = out "\n"
+    else if (nx == "t") out = out "\t"
+    else if (nx == "u") {
+      h = hexval(substr(s, 1, 4)); s = substr(s, 5)
+      if (h >= 55296 && h < 56320 && substr(s, 1, 2) == "\\u") {
+        l = hexval(substr(s, 3, 4))
+        if (l >= 56320 && l < 57344) { s = substr(s, 7); h = 65536 + (h - 55296) * 1024 + (l - 56320) }
+      }
+      if (h < 32 || h == 127 || (h >= 55296 && h < 57344)) bad = 1; else out = out utf8(h)
+    }
+    else bad = 1
+  }
+  return out s
+}
+function block(code, arg) { if (!blocked) { blocked = 1; gsub(/[\t\n\r]/, " ", arg); print "block\t" code "\t" substr(arg, 1, 160) } }
+function endword() {
+  if (!inword) return
+  if (redir != "") { checkredir(redir, word); redir = "" }
+  else { nw[ns]++; W[ns, nw[ns]] = word }
+  word = ""; inword = 0
+}
+function endseg() {
+  endword()
+  if (redir != "") { block("syntax", redir); redir = "" }
+  if (nw[ns] > 0) { ns++; nw[ns] = 0 }
+}
+function checkredir(op, t) {
+  if (op == "<") return
+  if ((op == ">&" || op == "<&") && t ~ /^([0-9]+|-)$/) return
+  if (op == "<&" || op == "<>") { block("redirect", op t); return }
+  if (t == "/dev/null") return
+  inside(t, op, ns)
+}
+function tokenize(c,   L, i, ch, nx, j, rest, op) {
+  L = length(c); ns = 1; nw[1] = 0; word = ""; inword = 0; redir = ""
+  for (i = 1; i <= L && !blocked; i++) {
+    ch = substr(c, i, 1)
+    if (ch == "\\") { nx = substr(c, i + 1, 1); i++; if (nx != "\n") { word = word nx; inword = 1 }; continue }
+    if (ch == SQ) {
+      rest = substr(c, i + 1); j = index(rest, SQ)
+      if (!j) { block("syntax", SQ); break }
+      word = word substr(rest, 1, j - 1); inword = 1; i += j; continue
+    }
+    if (ch == "\"") {
+      inword = 1
+      for (i++; i <= L; i++) {
+        ch = substr(c, i, 1)
+        if (ch == "\"") break
+        if (ch == "`" || (ch == "$" && substr(c, i + 1, 1) == "(")) { block("subst", ch); break }
+        if (ch == "\\") {
+          nx = substr(c, i + 1, 1)
+          if (nx == "$" || nx == "`" || nx == "\"" || nx == "\\") { word = word nx; i++; continue }
+          if (nx == "\n") { i++; continue }
+        }
+        word = word ch
+      }
+      if (i > L) block("syntax", "\"")
+      continue
+    }
+    if (ch == "`" || (ch == "$" && substr(c, i + 1, 1) == "(")) { block("subst", ch "("); break }
+    if (ch == " " || ch == "\t") { endword(); continue }
+    if (ch == "\n" || ch == ";") { endseg(); continue }
+    if (ch == "&") {
+      nx = substr(c, i + 1, 1)
+      if (nx == ">") { endword(); i++; redir = "&>"; if (substr(c, i + 1, 1) == ">") { i++; redir = "&>>" }; continue }
+      if (nx == "&") i++
+      endseg(); continue
+    }
+    if (ch == "|") { nx = substr(c, i + 1, 1); if (nx == "|" || nx == "&") i++; endseg(); continue }
+    if (ch == "(" || ch == ")") { block("subshell", ch); break }
+    if (ch == "<" || ch == ">") {
+      if (inword && word ~ /^[0-9]+$/) { word = ""; inword = 0 } else endword()
+      if (redir != "") { block("syntax", redir ch); break }
+      nx = substr(c, i + 1, 1)
+      if (nx == "(") { block("subst", ch "("); break }
+      op = ch
+      if (ch == ">" && (nx == ">" || nx == "&" || nx == "|")) { op = op nx; i++ }
+      else if (ch == "<" && (nx == "<" || nx == "&" || nx == ">")) { op = op nx; i++ }
+      if (op == "<<") { block("heredoc", op); break }
+      redir = op; continue
+    }
+    if (ch == "#" && !inword) { j = index(substr(c, i), "\n"); if (!j) break; i += j - 2; continue }
+    word = word ch; inword = 1
+  }
+  if (!blocked) endseg()
+}
+function inside(a, what, seg) {
+  if (a ~ /[$*?{}`\t\n\r]/ || index(a, "[") || a ~ /^~[^\/]/) { block("unverifiable", a); return }
+  nin++; IN[nin] = a; WHAT[nin] = what; SEG[nin] = seg
+}
+function gitcheck(s, n,   k, a, sc, j) {
+  k = 2
+  while (k <= n) {
+    a = W[s, k]
+    if (a == "-C") { k += 2; continue }
+    if (a == "--no-pager" || a == "-P") { k++; continue }
+    if (a ~ /^-/) { block("gitopt", a); return }
+    break
+  }
+  if (k > n) { block("gitsub", ""); return }
+  sc = W[s, k]
+  for (j = k + 1; j <= n; j++) if (W[s, j] ~ /^--output/ || W[s, j] == "--ext-diff") { block("gitopt", W[s, j]); return }
+  if (sc == "status" || sc == "log" || sc == "show" || sc == "ls-files" || sc == "rev-parse") return
+  if (sc == "diff") {
+    for (j = k + 1; j <= n; j++) if (W[s, j] ~ /^--(stat|numstat|shortstat|dirstat|name-only|name-status|compact-summary|summary)/) return
+    block("gitdiff", ""); return
+  }
+  if (sc == "worktree") { if (W[s, k + 1] == "list") return; block("gitsub", "worktree " W[s, k + 1]); return }
+  if (sc == "branch") { branchcheck(s, n, k); return }
+  block("gitsub", sc)
+}
+function branchcheck(s, n, k,   j, a, nm, listmode, pos, endopt) {
+  listmode = 0; pos = 0; endopt = 0
+  for (j = k + 1; j <= n; j++) {
+    a = W[s, j]
+    if (!endopt && a == "--") { endopt = 1; continue }
+    if (!endopt && a ~ /^--/) {
+      nm = a; sub(/=.*/, "", nm)
+      if (nm ~ /^--(list|contains|no-contains|merged|no-merged|points-at)$/) { listmode = 1; continue }
+      if (nm ~ /^--(all|remotes|verbose|show-current|color|no-color|column|no-column|abbrev|no-abbrev|ignore-case|omit-empty)$/) continue
+      if (nm == "--sort" || nm == "--format") { if (a !~ /=/) j++; continue }
+      block("gitbranch", a); return
+    }
+    if (!endopt && a ~ /^-./) {
+      if (a ~ /^-[arvli]+$/) { if (a ~ /l/) listmode = 1; continue }
+      block("gitbranch", a); return
+    }
+    pos++
+  }
+  if (pos > 0 && !listmode) block("gitbranch", W[s, k + 1])
+}
+function mkdircheck(s, n,   j, a, endopt) {
+  endopt = 0
+  for (j = 2; j <= n && !blocked; j++) {
+    a = W[s, j]
+    if (!endopt && a == "--") { endopt = 1; continue }
+    if (!endopt && a ~ /^-/) { if (a ~ /^-[pv]+$/ || a == "--parents" || a == "--verbose") continue; block("mkdiropt", a); return }
+    inside(a, "mkdir", s)
+  }
+}
+function cpcheck(s, n,   j, a, endopt, cnt, last) {
+  endopt = 0; cnt = 0
+  for (j = 2; j <= n; j++) {
+    a = W[s, j]
+    if (!endopt && a == "--") { endopt = 1; continue }
+    if (!endopt && a ~ /^-/) {
+      if (a ~ /^-[rRpnfiva]+$/ || a ~ /^--(recursive|no-clobber|force|interactive|archive|verbose)$/) continue
+      block("cpopt", a); return
+    }
+    cnt++; last = a
+  }
+  if (cnt < 2) { block("cpargs", ""); return }
+  inside(last, "cp", s)
+}
+function evalsegs(   s, n, k, cmd, cdseg) {
+  cdseg = 0
+  for (s = 1; s <= ns && !blocked; s++) {
+    n = nw[s]; if (n == 0) continue
+    cmd = W[s, 1]
+    if (cmd ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) { block("assign", cmd); return }
+    if (cmd == "ls" || cmd == "cat" || cmd == "head" || cmd == "wc" || cmd == "pwd" || cmd == "echo") continue
+    if (cmd == "tail") {
+      for (k = 2; k <= n; k++) if (W[s, k] ~ /^-[^-]*[fF]/ || W[s, k] ~ /^--(follow|retry)/) { block("follow", W[s, k]); return }
+      continue
+    }
+    if (cmd == "cd") { if (!cdseg) cdseg = s; continue }
+    if (cmd == "git") { gitcheck(s, n); continue }
+    if (cmd == "mkdir") { mkdircheck(s, n); continue }
+    if (cmd == "cp") { cpcheck(s, n); continue }
+    block("cmd", cmd); return
+  }
+  # relative write targets after a cd would be resolved against the wrong folder (absolute ones are fine)
+  if (!blocked && cdseg) for (k = 1; k <= nin; k++) if (SEG[k] > cdseg && IN[k] !~ /^(\/|~\/|[A-Za-z]:[\/\\])/) { block("cdwrite", WHAT[k]); return }
+}
+{ buf = (NR > 1) ? buf " " $0 : $0 }   # raw newlines are only whitespace in JSON; BWK awk split() also cuts at "\n"
+END {
+  SQ = sprintf("%c", 39)
+  WANT["agent_id"] = "agent"; WANT["tool_name"] = "tool"; WANT["cwd"] = "cwd"; WANT["permission_mode"] = "mode"
+  WANT["tool_input.file_path"] = "path"; WANT["tool_input.notebook_path"] = "path"; WANT["tool_input.command"] = "command"
+  np = split(buf, P, "\"")
+  d = 0; structure(P[1]); i = 2
+  while (i <= np) {
+    a = i
+    while (oddbs(P[i]) && i < np) i++
+    if (i >= np) { print "err\tjson"; exit }
+    if (P[i + 1] ~ /^[ \t\r\n]*:/) K[d] = join(a, i)
+    else if (T[d] == "o") {
+      p = curpath()
+      if (p in WANT) {
+        if (WANT[p] in GOT) { print "err\tdup"; exit }
+        bad = 0; v = decode(join(a, i)); GOT[WANT[p]] = v
+        if (WANT[p] != "command") {
+          if (bad || v ~ /[\t\n\r]/) { print "err\tvalue"; exit }
+          print WANT[p] "\t" v
+        } else if (bad) cmdbad = 1
+      }
+    }
+    structure(P[i + 1]); i += 2
+  }
+  if (d != 0) { print "err\tjson"; exit }
+  if (GOT["tool"] != "Bash") exit
+  if (!("command" in GOT) || cmdbad) { print "block\tsyntax\t"; exit }
+  if (length(GOT["command"]) > 20000) { print "block\tlong\t"; exit }
+  blocked = 0; tokenize(GOT["command"])
+  if (!blocked) evalsegs()
+  if (!blocked) for (k = 1; k <= nin; k++) print "inside\t" IN[k]
+}
+'
+
+# Holds the call back: "ask" (the user decides in a permission prompt), or "deny" in
+# bypassPermissions mode, where Claude Code would let "ask" through for protected folders.
+# $2 = form: the guard could not check how the command was written, so suggest a plainer form first.
+ask() {
+  if [ "${2:-}" = form ]; then _t=$M_FORM; else _t=$M_TICKET; fi
+  if [ "$mode" = bypassPermissions ]; then _d=deny _h=$_t$M_SEP$M_DENY; else _d=ask _h=$_t$M_SEP$M_ASK; fi
+  _m=$(printf '%s%s%s%s\n' "$M_PREFIX" "$1" "$M_SEP" "$_h" | LC_ALL=C awk '
+    { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/[\001-\037\177]/, " "); printf "%s%s", (NR > 1 ? " " : ""), $0 }')
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"%s","permissionDecisionReason":"%s"}}\n' "$_d" "$_m"
+  exit 0
+}
+
+case $(uname -s 2>/dev/null) in MINGW* | MSYS* | CYGWIN*) on_windows=1 ;; *) on_windows= ;; esac
+
+# Windows (Git Bash) passes C:\... paths; turn them into /c/... so the checks below work.
+to_posix() {
+  if [ -n "$on_windows" ]; then
+    if command -v cygpath >/dev/null 2>&1; then cygpath -u "$1"; else printf '%s\n' "$1" | tr '\\' '/'; fi
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+# Absolute path -> "." and ".." removed lexically, as Node's path.resolve does for Write/Edit.
+lexical() {
+  printf '%s\n' "$1" | LC_ALL=C awk -F/ '{
+    n = 0
+    for (i = 1; i <= NF; i++) { if ($i == "" || $i == ".") continue; if ($i == "..") { if (n > 0) n--; continue } s[++n] = $i }
+    o = ""; for (i = 1; i <= n; i++) o = o "/" s[i]; print (o == "" ? "/" : o) }'
+}
+
+# Absolute path -> where it really lands: follow a symlinked last component, resolve the
+# longest existing directory prefix with pwd -P (symlinks and ".." as the kernel sees
+# them), keep the not-yet-existing rest. Fails on symlink loops and dangling links.
+physical() {
+  _p=$1 _n=0
+  while [ -L "$_p" ]; do
+    _n=$((_n + 1)); [ "$_n" -le 40 ] || return 1
+    _l=$(readlink "$_p") || return 1
+    case $_l in /*) _p=$_l ;; *) _p=${_p%/*}/$_l ;; esac
+  done
+  _t=
+  while [ -n "$_p" ] && [ ! -d "$_p" ]; do
+    [ -L "$_p" ] && return 1
+    _t=/${_p##*/}$_t
+    _p=${_p%/*}
+  done
+  _r=$(cd -P "${_p:-/}" 2>/dev/null && pwd -P) || return 1
+  [ "$_r" = / ] && _r=
+  lexical "$_r$_t"
+}
+
+# True if path $1 (relative ones are taken from directory $2) lands inside $butler,
+# read both the lexical way (Write/Edit) and the kernel way (mkdir/cp). With $3 = dir,
+# $butler itself also counts (mkdir .claude/butler, cp x .claude/butler/).
+in_butler() {
+  _x=$1
+  case $_x in
+    '~') _x=$HOME ;;
+    '~/'*) _x=$HOME/${_x#'~/'} ;;
+  esac
+  _x=$(to_posix "$_x")
+  case $_x in /*) ;; *) _x=$2/$_x ;; esac
+  _a=$(physical "$(lexical "$_x")") || return 1
+  _b=$(physical "$_x") || return 1
+  for _c in "$_a" "$_b"; do
+    case $_c in
+      "$butler"/*) ;;
+      "$butler") [ "${3:-}" = dir ] || return 1 ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
+input=$(cat)
+# Known before parsing, so that even unreadable input is denied rather than asked in bypass mode.
+case $input in *'"permission_mode":"bypassPermissions"'* | *'"permission_mode": "bypassPermissions"'*) mode=bypassPermissions ;; *) mode= ;; esac
+fields=$(printf '%s\n' "$input" | LC_ALL=C awk "$AWK_PROG") || ask "$M_PARSE"
+
+tab=$(printf '\t')
+agent= tool= cwd= path= err= bcode= barg= insides=
+while IFS= read -r line; do
+  key=${line%%"$tab"*}
+  val=${line#*"$tab"}
+  case $key in
+    agent) agent=$val ;;
+    mode) mode=$val ;;
+    tool) tool=$val ;;
+    cwd) cwd=$val ;;
+    path) path=$val ;;
+    err) err=$val ;;
+    block) bcode=${val%%"$tab"*} barg=${val#*"$tab"} ;;
+    inside) insides=$insides$val$tab ;;
+  esac
+done <<EOF
+$fields
+EOF
+
+# Subagents (Workers, verification) are never the butler: let them through untouched.
+[ -n "$agent" ] && exit 0
+
+case $tool in
+  Bash | Write | Edit | MultiEdit | NotebookEdit) ;;
+  PowerShell) ask "$M_PS" ;;
+  '') ask "$M_PARSE" ;;
+  *) exit 0 ;;
+esac
+[ -n "$err" ] && ask "$M_PARSE"
+
+root=$(to_posix "${CLAUDE_PROJECT_DIR:-${cwd:-$PWD}}")
+base=$(to_posix "${cwd:-$root}")
+butler=$(physical "$(lexical "$root/.claude/butler")") || ask "$M_PARSE"
+
+if [ "$tool" = Bash ]; then
+  case $bcode in subst | subshell | heredoc | assign | syntax | unverifiable | cdwrite | long) kind=form ;; *) kind= ;; esac
+  [ -n "$bcode" ] && ask "$M_BASH$(detail "$bcode" "$barg")$M_BASH_OK" "$kind"
+  while [ -n "$insides" ]; do
+    p=${insides%%"$tab"*}
+    insides=${insides#*"$tab"}
+    in_butler "$p" "$base" dir || ask "$M_BASH$(detail outside "$p")$M_BASH_OK"
+  done
+  exit 0
+fi
+
+[ -n "$path" ] || ask "$M_PARSE"
+in_butler "$path" "$base" || ask "$M_WRITE$path$M_STOP"
+exit 0
