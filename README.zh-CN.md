@@ -173,7 +173,11 @@ cp -r butler-skill/butler ~/.claude/skills/
 
 ## 六、局限
 
-- 管家窗口的边界由 skill 自带的 PreToolUse hook（`scripts/guard.sh`）把关：管家要写 `.claude/butler/` 以外的文件，或者跑只读白名单以外的命令时，Claude Code 会先弹窗问你。想让管家自己动手就批准；拒绝的话，它会把这件事开成工单。Worker 子会话和 subagent 不受影响。守卫有这些局限：
+- 管家窗口的边界由 skill 自带的 PreToolUse hook（`scripts/guard.sh`）把关：管家要写 `.claude/butler/` 以外的文件，或者跑只读白名单以外的命令时，Claude Code 会先弹窗问你。想让管家自己动手就批准；拒绝的话，它会把这件事开成工单。Worker 子会话和 subagent 不受影响。
+  - **不拦的**：查看文件和环境的只读命令（`grep`、`rg`、`find`、`sort`、`uniq`、`diff`、`stat`、`du`、`which`、`command -v`、按行号打印的 `sed -n`、`java -version` 这类查版本的命令等），不改仓库的 git 查询，以及管家在 `.claude/butler/` 里用 `>`、heredoc、`mkdir`、`cp`、`mv`、`rm`、`touch`、`tee` 维护自己的文件。
+  - **会问你的**：写 `.claude/butler/` 以外的文件；`python`、`node` 这类能执行任意代码的解释器；构建、测试、起服务器；`sed -i`、`find -delete`、`sort -o` 这类会改文件的写法。
+
+  守卫有这些局限：
   - 从输入 `/butler` 起到会话结束有效。用 `--resume`、`--continue` 或重新打开来恢复旧会话，守卫不会跟着恢复，要再输入一次 `/butler 继续`。
   - 每次越界调用都要单独批准。`claude -p` 和没有权限回调的 SDK 里没有弹窗，越界调用一律被拒。
   - bypassPermissions 模式下守卫直接拒绝，不弹窗问，也就没法批准。原因是这个模式下，只要目标在 `.claude/`、`.git/` 这类受保护目录里，Claude Code（2.1.318）就会把 hook 的 "ask" 直接放行，管家就能去改 `.claude/settings.json` 了。真要让管家自己动手，先切换到别的权限模式。
