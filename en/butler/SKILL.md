@@ -61,7 +61,12 @@ Global state lives in `.claude/butler/ledger.md`, not in the conversation. The b
 - First thing when starting work: read the ledger and `rules.md`, and pick up where you left off.
 - Update the ledger immediately when a ticket is opened, a verification result comes in, the user makes a decision, a contract changes, or something gets blocked.
 - **Before every report to the user, write what you are about to ask under "Awaiting your decision"**; once the user decides, move the item to "Decisions made" with the date and the related tickets. A new session reading only the ledger must be able to tell what is waiting on the user and what has been settled.
-- Fill in the done date when a ticket passes verification. Tickets done for more than a week (by done date) move to "Archive" at the end of the ledger; ticket files are kept.
+- **Keep only live work in the ledger.** Every new session reads it in full, so the shorter it is, the less context it costs:
+  - **Archive on completion**: once a ticket passes verification and its open items have become other tickets or entries under "Awaiting your decision", move its row to `ledger-archive.md` with the done date. Ticket files are kept.
+  - **Two kinds of decisions**: those that still constrain later work (permission rules, technology choices, "ask first" boundaries) stay in the ledger; one-off approvals, decisions already carried out, and decisions superseded by newer ones move to `ledger-archive.md`. When a new decision supersedes an old one, say "supersedes D-xxx". Decision IDs only go up and are never reused.
+  - **One sentence per row**: the "Next step" cell is a single sentence (about 20 words at most); progress details are appended to the ticket file.
+  - **Don't read the archive at startup**: to look up an old ticket or decision, search it by ID (`grep -n "D-012" .claude/butler/ledger-archive.md`) instead of reading the whole file.
+  - Create `ledger-archive.md` from this skill's `templates/ledger-archive.md` the first time it is needed.
 
 ## Saving the butler's context
 
