@@ -184,7 +184,11 @@ In git projects, `.claude/butler/` comes with its own `.gitignore`, so it stays 
 
 ## Limitations
 
-- The butler session's boundaries are enforced by a PreToolUse hook that ships with the skill (`scripts/guard.sh`). When the butler tries to write a file outside `.claude/butler/`, or run a command outside its read-only allowlist, Claude Code asks you first. Approve if you want the butler to do it itself; deny, and it turns the work into a ticket. Worker sub-sessions and subagents aren't affected. The guard has limits:
+- The butler session's boundaries are enforced by a PreToolUse hook that ships with the skill (`scripts/guard.sh`). When the butler tries to write a file outside `.claude/butler/`, or run a command outside its read-only allowlist, Claude Code asks you first. Approve if you want the butler to do it itself; deny, and it turns the work into a ticket. Worker sub-sessions and subagents aren't affected.
+  - **Let through**: read-only commands for looking at files and the environment (`grep`, `rg`, `find`, `sort`, `uniq`, `diff`, `stat`, `du`, `which`, `command -v`, `sed -n` printing line ranges, version probes such as `java -version`, and so on), git queries that don't change the repository, and the butler keeping its own files under `.claude/butler/` with `>`, heredocs, `mkdir`, `cp`, `mv`, `rm`, `touch` and `tee`.
+  - **Asks you**: writing files outside `.claude/butler/`; interpreters that can run arbitrary code, such as `python` or `node`; builds, tests and servers; forms that change files, such as `sed -i`, `find -delete` or `sort -o`.
+
+  The guard has limits:
   - It's active from the moment you type `/butler` until the session ends. Resuming an old session (`--resume`, `--continue`, or reopening it) doesn't bring it back; type `/butler continue` again.
   - Every out-of-bounds call needs its own approval. `claude -p` and SDK runs without a permission handler have no prompt, so those calls are always refused.
   - In bypassPermissions mode the guard refuses instead of asking, so the butler can't be let through at all. In that mode Claude Code (2.1.318) lets a hook's "ask" through whenever the target is in a protected folder such as `.claude/` or `.git/`, which would have let the butler edit `.claude/settings.json`. To let the butler do something itself, switch to another mode first.

@@ -5,7 +5,7 @@
 # MultiEdit、NotebookEdit、PowerShell 之前运行这个脚本，把调用信息（JSON）从 stdin 传进来。
 # - 写文件：目标在 <项目根>/.claude/butler/ 里才放行。
 # - Bash：只放行「角色边界」里列的只读查看命令；复合命令每一段都要在白名单里。
-#   输出重定向、mkdir、cp 只能写到 .claude/butler/ 里。
+#   输出重定向、heredoc、mkdir、cp、mv、rm、touch、tee 只能落在 .claude/butler/ 里。
 # - subagent 里的调用（输入带 agent_id）一律不管。
 # 不放行时返回 "ask"：Claude Code 弹出权限确认，由用户决定。用户说过"你直接改"就批准，
 # 否则拒绝。bypassPermissions 模式下改为返回 "deny"：这个模式下，目标在 .claude/、.git/
@@ -17,12 +17,12 @@
 M_PREFIX='管家守卫：'
 M_SEP=''
 M_TICKET='请把这件事开成工单派给 Worker。'
-M_FORM='如果这一步只是写 .claude/butler/ 里的文件或只读查询，换成直白写法再试（用写文件的工具，或路径写全、不用变量、heredoc 和 $(...)）；否则请把这件事开成工单派给 Worker。'
+M_FORM='如果这一步只是写 .claude/butler/ 里的文件或只读查询，换成直白写法再试（用写文件或编辑的工具，或路径写全、不用变量和 $(...)）；否则请把这件事开成工单派给 Worker。'
 M_ASK='这一步要用户在确认框里亲自批准：用户在本窗口明确说过"你直接改"才批准，否则拒绝。'
 M_DENY='当前是 bypassPermissions 模式，守卫没法弹窗问用户，只能直接拒绝；用户真要管家自己改，得先切换到别的权限模式。'
 M_WRITE='管家窗口只能写 .claude/butler/ 下的文件，这次要写的是 '
 M_BASH='管家窗口只能跑只读查看命令，这条不行：'
-M_BASH_OK='。允许的有：ls、cat、head、tail、wc、pwd、cd、echo；git status、git diff --stat、git diff --name-only、git log、git show、git ls-files、git rev-parse、git branch、git worktree list（可加 -C <路径>）；往 .claude/butler/ 里 mkdir、cp、输出重定向。'
+M_BASH_OK='。允许的有：ls、cat、head、tail、wc、pwd、cd、echo、grep、rg、find、sort、uniq、diff、cmp、comm、stat、du、realpath、basename、dirname、which、command -v、sed -n 按行号打印、工具 --version；git status、git diff --stat、git diff --name-only、git log、git show、git ls-files、git rev-parse、git branch、git worktree list（可加 -C <路径>）；在 .claude/butler/ 里 mkdir、cp、mv、rm、touch、tee、输出重定向和 heredoc。'
 M_STOP='。'
 M_PS='管家窗口不解析 PowerShell 命令，一律先问你。'
 M_PARSE='看不懂这次调用的参数，先问你。'
@@ -32,7 +32,11 @@ detail() {
     redirect) printf '输出重定向 %s' "$2" ;;
     subst) printf '命令替换或进程替换 %s' "$2" ;;
     subshell) printf '子 shell 或括号 %s' "$2" ;;
-    heredoc) printf 'heredoc %s' "$2" ;;
+    heredoc) printf 'heredoc %s 的定界符看不懂或没有结束' "$2" ;;
+    opt) printf '选项或参数 %s 会写文件或执行命令' "$2" ;;
+    sed) printf 'sed 只允许 -n 加行号打印（如 sed -n 12,40p 文件），这条是 %s' "$2" ;;
+    fileargs) printf '%s 缺少文件参数' "$2" ;;
+    interp) printf '%s 能执行任意代码；改 .claude/butler/ 里的文件请用写文件或编辑的工具' "$2" ;;
     assign) printf '命令前带环境变量赋值 %s' "$2" ;;
     cmd) printf '不在白名单的命令 %s' "$2" ;;
     gitopt) printf 'git 选项 %s' "$2" ;;
@@ -120,8 +124,46 @@ function checkredir(op, t) {
   if (t == "/dev/null") return
   inside(t, op, ns)
 }
+# Reads a heredoc delimiter starting after position i; sets hdw (the delimiter) and hdq (1 if
+# any part was quoted, so the body is literal). Returns the position of its last character.
+function hdword(c, i, L,   ch, j, rest) {
+  hdw = ""; hdq = 0
+  for (i++; i <= L && (substr(c, i, 1) == " " || substr(c, i, 1) == "\t"); i++) ;
+  for (; i <= L; i++) {
+    ch = substr(c, i, 1)
+    if (ch == SQ || ch == "\"") {
+      rest = substr(c, i + 1); j = index(rest, ch)
+      if (!j) { block("syntax", ch); return i }
+      hdw = hdw substr(rest, 1, j - 1); hdq = 1; i += j; continue
+    }
+    if (ch == "\\") { hdw = hdw substr(c, i + 1, 1); hdq = 1; i++; continue }
+    if (index(" \t\n;&|<>()", ch)) break
+    if (ch == "$" || ch == "`") { block("heredoc", ch); return i }
+    hdw = hdw ch
+  }
+  if (hdw == "") block("heredoc", "<<")
+  return i - 1
+}
+# Skips the bodies of the heredocs opened on the line that ends at position i (a newline).
+# A body is data, but an unquoted one still runs $(...) and backquotes, so those are held back.
+# Returns the position of the newline that ends the last delimiter line.
+function hdbodies(c, i, L,   k, rest, j, line, cmp) {
+  for (k = hdone + 1; k <= hdn; k++) {
+    for (;;) {
+      if (i >= L) { block("heredoc", "<<" HD[k]); return L }
+      rest = substr(c, i + 1); j = index(rest, "\n")
+      line = j ? substr(rest, 1, j - 1) : rest
+      i = j ? i + j : L
+      cmp = line; if (HT[k]) sub(/^\t+/, "", cmp)
+      if (cmp == HD[k]) break
+      if (!HQ[k] && (index(line, "$(") || index(line, "`"))) { block("subst", "$("); return i }
+    }
+  }
+  hdone = hdn
+  return i
+}
 function tokenize(c,   L, i, ch, nx, j, rest, op) {
-  L = length(c); ns = 1; nw[1] = 0; word = ""; inword = 0; redir = ""
+  L = length(c); ns = 1; nw[1] = 0; word = ""; inword = 0; redir = ""; hdn = 0; hdone = 0
   for (i = 1; i <= L && !blocked; i++) {
     ch = substr(c, i, 1)
     if (ch == "\\") { nx = substr(c, i + 1, 1); i++; if (nx != "\n") { word = word nx; inword = 1 }; continue }
@@ -148,6 +190,7 @@ function tokenize(c,   L, i, ch, nx, j, rest, op) {
     }
     if (ch == "`" || (ch == "$" && substr(c, i + 1, 1) == "(")) { block("subst", ch "("); break }
     if (ch == " " || ch == "\t") { endword(); continue }
+    if (ch == "\n" && hdn > hdone) { endseg(); i = hdbodies(c, i, L); if (blocked) break; continue }
     if (ch == "\n" || ch == ";") { endseg(); continue }
     if (ch == "&") {
       nx = substr(c, i + 1, 1)
@@ -165,13 +208,19 @@ function tokenize(c,   L, i, ch, nx, j, rest, op) {
       op = ch
       if (ch == ">" && (nx == ">" || nx == "&" || nx == "|")) { op = op nx; i++ }
       else if (ch == "<" && (nx == "<" || nx == "&" || nx == ">")) { op = op nx; i++ }
-      if (op == "<<") { block("heredoc", op); break }
+      if (op == "<<") {
+        if (substr(c, i + 1, 1) == "<") { i++; redir = "<"; continue }   # here-string: input only
+        nx = 0; if (substr(c, i + 1, 1) == "-") { nx = 1; i++ }
+        i = hdword(c, i, L); if (blocked) break
+        hdn++; HD[hdn] = hdw; HQ[hdn] = hdq; HT[hdn] = nx; continue
+      }
       redir = op; continue
     }
     if (ch == "#" && !inword) { j = index(substr(c, i), "\n"); if (!j) break; i += j - 2; continue }
     word = word ch; inword = 1
   }
   if (!blocked) endseg()
+  if (!blocked && hdn > hdone) block("heredoc", "<<" HD[hdn])
 }
 function inside(a, what, seg) {
   if (a ~ /[$*?{}`\t\n\r]/ || index(a, "[") || a ~ /^~[^\/]/) { block("unverifiable", a); return }
@@ -241,13 +290,81 @@ function cpcheck(s, n,   j, a, endopt, cnt, last) {
   if (cnt < 2) { block("cpargs", ""); return }
   inside(last, "cp", s)
 }
-function evalsegs(   s, n, k, cmd, cdseg) {
+# Commands that only touch files: every non-option argument must land inside .claude/butler/.
+function filecheck(s, n, what, optre,   j, a, endopt, cnt) {
+  endopt = 0; cnt = 0
+  for (j = 2; j <= n && !blocked; j++) {
+    a = W[s, j]
+    if (!endopt && a == "--") { endopt = 1; continue }
+    if (!endopt && a ~ /^-./) { if (a ~ optre) continue; block("opt", a); return }
+    cnt++; inside(a, what, s)
+  }
+  if (!cnt && !blocked && what != "tee") block("fileargs", what)
+}
+function mvcheck(s, n,   j, a, endopt, cnt, last) {
+  endopt = 0; cnt = 0
+  for (j = 2; j <= n; j++) {
+    a = W[s, j]
+    if (!endopt && a == "--") { endopt = 1; continue }
+    if (!endopt && a ~ /^-./) { if (a ~ /^-[fniv]+$/) continue; block("opt", a); return }
+    cnt++; last = j
+  }
+  if (cnt < 2) { block("fileargs", "mv"); return }
+  endopt = 0
+  for (j = 2; j <= n && !blocked; j++) {
+    a = W[s, j]
+    if (!endopt && a == "--") { endopt = 1; continue }
+    if (!endopt && a ~ /^-./) continue
+    inside(a, (j == last) ? "mv" : "mvsrc", s)
+  }
+}
+# sed only as a line printer: sed -n 12,40p file. Scripts that could write (w), run (e)
+# or edit in place (-i) are held back, and so are regex addresses, which are not parsed.
+function sedok(x) { return x ~ /^[0-9$,;p \t]+$/ && index(x, "p") }
+function sedcheck(s, n,   j, a, ns) {
+  ns = 0
+  for (j = 2; j <= n; j++) {
+    a = W[s, j]
+    if (a == "-e") { j++; if (!sedok(W[s, j])) { block("sed", W[s, j]); return }; ns++; continue }
+    if (a ~ /^-./) { if (a ~ /^-[nEr]+$/ || a == "--quiet" || a == "--silent") continue; block("sed", a); return }
+    if (!ns) { if (!sedok(a)) { block("sed", a); return }; ns++ }
+  }
+  if (!ns) block("sed", "")
+}
+function evalsegs(   s, n, k, cmd, cdseg, pos) {
   cdseg = 0
   for (s = 1; s <= ns && !blocked; s++) {
     n = nw[s]; if (n == 0) continue
     cmd = W[s, 1]
     if (cmd ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) { block("assign", cmd); return }
     if (cmd == "ls" || cmd == "cat" || cmd == "head" || cmd == "wc" || cmd == "pwd" || cmd == "echo") continue
+    # read-only lookups
+    if (cmd ~ /^(grep|egrep|fgrep|diff|cmp|comm|stat|du|realpath|basename|dirname|which)$/) continue
+    if (cmd == "rg") { for (k = 2; k <= n; k++) if (W[s, k] ~ /^--pre/) { block("opt", W[s, k]); return }; continue }
+    if (cmd == "find") {
+      for (k = 2; k <= n; k++) if (W[s, k] ~ /^-(exec|execdir|ok|okdir|delete|fprint|fprint0|fprintf|fls)$/) { block("opt", W[s, k]); return }
+      continue
+    }
+    if (cmd == "sort") {
+      for (k = 2; k <= n; k++) if (W[s, k] ~ /^-[^-]*o/ || W[s, k] ~ /^--(output|compress-program)/) { block("opt", W[s, k]); return }
+      continue
+    }
+    if (cmd == "uniq") {   # a second file argument is where uniq writes
+      pos = 0; for (k = 2; k <= n; k++) if (W[s, k] !~ /^-./) pos++
+      if (pos > 1) { block("opt", W[s, n]); return }
+      continue
+    }
+    if (cmd == "sed") { sedcheck(s, n); continue }
+    if (cmd == "command") { if (n >= 3 && (W[s, 2] == "-v" || W[s, 2] == "-V")) continue; block("cmd", cmd); return }
+    # tool version probes such as java -version or node --version (bare command names only)
+    if (n == 2 && (W[s, 2] == "--version" || W[s, 2] == "-version") && cmd !~ /\//) continue
+    # files of the butler itself: create, append, move and delete inside .claude/butler/ only
+    if (cmd == "touch") { filecheck(s, n, "touch", "^-[acm]+$"); continue }
+    if (cmd == "rm") { filecheck(s, n, "rm", "^-[fv]+$"); continue }
+    if (cmd == "rmdir") { filecheck(s, n, "rmdir", "^-v+$"); continue }
+    if (cmd == "tee") { filecheck(s, n, "tee", "^-a+$"); continue }
+    if (cmd == "mv") { mvcheck(s, n); continue }
+    if (cmd ~ /^(python[0-9.]*|node|perl|ruby|php|bash|sh|zsh|dash|deno|bun|osascript)$/) { block("interp", cmd); return }
     if (cmd == "tail") {
       for (k = 2; k <= n; k++) if (W[s, k] ~ /^-[^-]*[fF]/ || W[s, k] ~ /^--(follow|retry)/) { block("follow", W[s, k]); return }
       continue
@@ -292,7 +409,8 @@ END {
   if (length(GOT["command"]) > 20000) { print "block\tlong\t"; exit }
   blocked = 0; tokenize(GOT["command"])
   if (!blocked) evalsegs()
-  if (!blocked) for (k = 1; k <= nin; k++) print "inside\t" IN[k]
+  # removed, moved-away or touched paths must be strictly inside; destinations may be .claude/butler itself
+  if (!blocked) for (k = 1; k <= nin; k++) { key = (WHAT[k] ~ /^(rm|rmdir|mvsrc|touch|tee)$/) ? "file" : "inside"; print key "\t" IN[k] }
 }
 '
 
@@ -376,7 +494,7 @@ case $input in *'"permission_mode":"bypassPermissions"'* | *'"permission_mode": 
 fields=$(printf '%s\n' "$input" | LC_ALL=C awk "$AWK_PROG") || ask "$M_PARSE"
 
 tab=$(printf '\t')
-agent= tool= cwd= path= err= bcode= barg= insides=
+agent= tool= cwd= path= err= bcode= barg= insides= files=
 while IFS= read -r line; do
   key=${line%%"$tab"*}
   val=${line#*"$tab"}
@@ -389,6 +507,7 @@ while IFS= read -r line; do
     err) err=$val ;;
     block) bcode=${val%%"$tab"*} barg=${val#*"$tab"} ;;
     inside) insides=$insides$val$tab ;;
+    file) files=$files$val$tab ;;
   esac
 done <<EOF
 $fields
@@ -410,12 +529,17 @@ base=$(to_posix "${cwd:-$root}")
 butler=$(physical "$(lexical "$root/.claude/butler")") || ask "$M_PARSE"
 
 if [ "$tool" = Bash ]; then
-  case $bcode in subst | subshell | heredoc | assign | syntax | unverifiable | cdwrite | long) kind=form ;; *) kind= ;; esac
+  case $bcode in subst | subshell | heredoc | assign | syntax | unverifiable | cdwrite | long | interp) kind=form ;; *) kind= ;; esac
   [ -n "$bcode" ] && ask "$M_BASH$(detail "$bcode" "$barg")$M_BASH_OK" "$kind"
   while [ -n "$insides" ]; do
     p=${insides%%"$tab"*}
     insides=${insides#*"$tab"}
     in_butler "$p" "$base" dir || ask "$M_BASH$(detail outside "$p")$M_BASH_OK"
+  done
+  while [ -n "$files" ]; do
+    p=${files%%"$tab"*}
+    files=${files#*"$tab"}
+    in_butler "$p" "$base" || ask "$M_BASH$(detail outside "$p")$M_BASH_OK"
   done
   exit 0
 fi

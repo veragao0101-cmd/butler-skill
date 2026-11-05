@@ -121,7 +121,58 @@ cases() { # GUARD
     "echo x > $B/a.md" \
     'git ls-files' \
     'git show --stat HEAD' \
-    "git -C $WT rev-parse --abbrev-ref HEAD"
+    "git -C $WT rev-parse --abbrev-ref HEAD" \
+    'grep -n "^#" .claude/butler/工单/T-018.md | head -80' \
+    'grep -rn TODO src' \
+    'rg -n ledger .claude/butler' \
+    'sed -n 92,112p .claude/butler/工单/T-018.md' \
+    "sed -n '1,5p;10p' src/a.js" \
+    'sed -n -e 3p -e 7,9p src/a.js' \
+    'find .claude/butler -name "*.md" -newer .claude/butler/台账.md' \
+    'sort -u src/list.txt | uniq -c' \
+    'uniq -c src/list.txt' \
+    'diff .claude/butler/a.md .claude/butler/b.md' \
+    'stat -f %m .claude/butler/台账.md' \
+    'du -sh src' \
+    'which node' \
+    'command -v docker mysql java mvn node' \
+    'java -version 2>&1 | head -2' \
+    'node --version' \
+    'touch .claude/butler/x' \
+    'rm .claude/butler/契约/C-005-草案.md' \
+    'rm -f .claude/butler/a.md .claude/butler/工单/b.md' \
+    "rm $B/a.md" \
+    'rmdir .claude/butler/tmp' \
+    'mv .claude/butler/a.md .claude/butler/归档/a.md' \
+    'mv -f .claude/butler/工单/T-001.md .claude/butler/' \
+    'echo x | tee .claude/butler/a.md' \
+    'git log -1 | tee -a .claude/butler/log.txt' \
+    'cat <<< hello' \
+    "cat > .claude/butler/工单/T-019.md <<'EOF'
+# T-019
+- \$(not run) and \`not run\` stay literal
+EOF" \
+    'cat >> .claude/butler/a.md <<EOF
+plain text, \${HOME} is only expanded
+EOF' \
+    "cat > .claude/butler/a.md <<-'EOF'
+	indented
+	EOF" \
+    'cat <<EOF > .claude/butler/a.md
+x
+EOF' \
+    "cat > .claude/butler/a.md <<'A' && cat > .claude/butler/b.md <<'B'
+a
+A
+b
+B" \
+    "cat > .claude/butler/a.md <<'EOF'
+x
+EOF
+git status" \
+    'cat <<EOF
+x
+EOF'
   do
     run "$g" allow "Bash allow: $c" "$(input Bash command "$c")"
   done
@@ -172,7 +223,63 @@ cases() { # GUARD
     'npm test' \
     'python3 x.py' \
     "sed -i 's/a/b/' f" \
-    'touch .claude/butler/x' \
+    "sed -n 's/a/b/p' f" \
+    "sed -n '/x/p' f" \
+    'sed -n 1,5w out f' \
+    'sed 5d f' \
+    'sed -n -i 1p f' \
+    'rg --pre cat x' \
+    'find . -delete' \
+    'find . -name x -exec rm {} \;' \
+    'find . -fprint out' \
+    'sort -o out in' \
+    'sort -uo out in' \
+    'uniq in out' \
+    'command ls' \
+    '/usr/bin/java -version' \
+    './run.sh --version' \
+    'java -jar app.jar --version' \
+    'touch src/a.js' \
+    'rm src/a.js' \
+    'rm -r .claude/butler/工单' \
+    'rm -rf .claude/butler' \
+    'rm .claude/butler' \
+    'rm .claude/butler/../settings.json' \
+    'rm .claude/butler/*.md' \
+    'rm' \
+    'rmdir -p .claude/butler/x' \
+    'mv .claude/butler/a.md src/a.md' \
+    'mv src/a.js .claude/butler/' \
+    'mv .claude/butler .claude/old' \
+    'mv -t .claude/butler src/a' \
+    'tee src/a' \
+    'echo x | tee .claude/butler/a src/b' \
+    "python3 - <<'EOF'
+open('.claude/butler/台账.md').read()
+EOF" \
+    'node -e 1' \
+    'sh x.sh' \
+    'cat > src/a.js <<EOF
+x
+EOF' \
+    'cat > .claude/butler/a.md <<EOF
+$(rm x)
+EOF' \
+    'cat > .claude/butler/a.md <<EOF
+`rm x`
+EOF' \
+    "cat > .claude/butler/a.md <<'EOF'
+x
+EOF
+rm src/b" \
+    'cat <<EOF' \
+    "cat > .claude/butler/a.md <<'EOF'
+x" \
+    'cat <<$X
+x
+$X' \
+    'cat <<
+x' \
     'mkdir src/new' \
     'mkdir -m 777 .claude/butler/x' \
     'mkdir .claude/butler/../../src' \
@@ -184,10 +291,7 @@ cases() { # GUARD
     'tail -f log.txt' \
     "echo 'unterminated" \
     'ls
-rm x' \
-    'cat <<EOF
-x
-EOF'
+rm x'
   do
     run "$g" ask "Bash ask: $c" "$(input Bash command "$c")"
   done
@@ -229,10 +333,14 @@ for lang in zh en; do
 
   # held back only because of how it is written: suggest a plainer form; out of bounds: suggest a ticket
   case $lang in zh) plain='换成直白写法' ;; en) plain='write it plainly' ;; esac
-  out=$(printf '%s' "$(input Bash command 'cat >> .claude/butler/a.md <<EOF
-x
+  out=$(printf '%s' "$(input Bash command "python3 - <<'EOF'
+open('.claude/butler/台账.md', 'a').write('x')
+EOF")" | CLAUDE_PROJECT_DIR=$root $shell "$guard")
+  case $out in *"$plain"*) pass=$((pass + 1)) ;; *) fail=$((fail + 1)); echo "FAIL [$lang] interpreter message does not suggest a plainer form: $out" ;; esac
+  out=$(printf '%s' "$(input Bash command 'cat > .claude/butler/a.md <<EOF
+$(date)
 EOF')" | CLAUDE_PROJECT_DIR=$root $shell "$guard")
-  case $out in *"$plain"*) pass=$((pass + 1)) ;; *) fail=$((fail + 1)); echo "FAIL [$lang] heredoc message does not suggest a plainer form: $out" ;; esac
+  case $out in *"$plain"*) pass=$((pass + 1)) ;; *) fail=$((fail + 1)); echo "FAIL [$lang] unquoted heredoc with \$(...) does not suggest a plainer form: $out" ;; esac
   out=$(printf '%s' "$(input Bash command 'npm test')" | CLAUDE_PROJECT_DIR=$root $shell "$guard")
   case $out in *"$plain"*) fail=$((fail + 1)); echo "FAIL [$lang] out-of-bounds message suggests a plainer form: $out" ;; *) pass=$((pass + 1)) ;; esac
 
