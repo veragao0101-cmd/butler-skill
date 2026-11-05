@@ -48,6 +48,11 @@ So this project **borrows the design principles, not the infrastructure**:
 
 ### Overall structure
 
+![Overall structure of the butler: you, the butler session, state files, sub-sessions and subagents](docs/diagrams/structure-en.svg)
+
+<details>
+<summary>Mermaid source</summary>
+
 ```mermaid
 flowchart TB
     U([You]) <-->|"tasks / decisions<br/>reports ~60 words"| R
@@ -74,6 +79,8 @@ flowchart TB
     U -.->|in-scope changes, directly| W1
 ```
 
+</details>
+
 - The butler session holds only **conclusions**; change details, verification steps and acceptance records go in the ticket files.
 - Sub-sessions don't talk to each other by default; they coordinate through **contract files** the butler writes up front.
 - You can open any sub-session to watch or step in at any time — but you don't have to.
@@ -81,6 +88,11 @@ flowchart TB
 To see it in practice, [examples/en/](examples/en/README.md) is a real run: every message the butler sent, and the ledger, tickets and contract it left behind.
 
 ### Lifecycle of a ticket
+
+![Lifecycle of a ticket: prep, queued, in progress, verification, rework, blocked, done](docs/diagrams/lifecycle-en.svg)
+
+<details>
+<summary>Mermaid source</summary>
 
 ```mermaid
 stateDiagram-v2
@@ -108,6 +120,8 @@ stateDiagram-v2
     Decide --> InProgress
     Done --> [*]
 ```
+
+</details>
 
 ### When it comes to you
 
@@ -201,6 +215,7 @@ In git projects, `.claude/butler/` comes with its own `.gitignore`, so it stays 
 
 - `sh tests/test-guard.sh` runs the guard tests against both editions.
 - The two `guard.sh` copies differ only in their messages: keep everything below the "shared logic" marker identical (the tests check this).
+- The README diagrams are shown as the SVGs in `docs/diagrams/`; the folded Mermaid blocks are their source. After editing a Mermaid block, re-export the matching SVG (two per language) so the two stay in sync.
 
 ## References
 

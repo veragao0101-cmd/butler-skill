@@ -48,6 +48,11 @@
 
 ### 整体结构
 
+![管家整体结构：你、管家窗口、状态文件、子会话和 subagent](docs/diagrams/structure-zh.svg)
+
+<details>
+<summary>Mermaid 源码</summary>
+
 ```mermaid
 flowchart TB
     U([你]) <-->|"任务 / 拍板<br/>汇报 ≤100 字"| R
@@ -74,6 +79,8 @@ flowchart TB
     U -.->|范围内的修改可直接找| W1
 ```
 
+</details>
+
 - 管家窗口里只放**结论**；改动明细、验证过程、验收记录都写进工单文件。
 - 子会话之间默认不通信，协作靠管家先写好的**契约文件**。
 - 你随时可以点进任意子会话查看过程或插话，但不点也行。
@@ -81,6 +88,11 @@ flowchart TB
 想看实际效果，[examples/zh/](examples/zh/README.md) 是一次真实运行的记录：管家发给用户的每一条消息，以及它留下的台账、工单和契约。
 
 ### 一张工单的生命周期
+
+![工单生命周期：预备、排队、进行中、待验收、返工、阻塞、完成](docs/diagrams/lifecycle-zh.svg)
+
+<details>
+<summary>Mermaid 源码</summary>
 
 ```mermaid
 stateDiagram-v2
@@ -99,6 +111,8 @@ stateDiagram-v2
     等你拍板 --> 进行中
     完成 --> [*]
 ```
+
+</details>
 
 ### 什么时候找你
 
@@ -191,6 +205,7 @@ cp -r butler-skill/butler ~/.claude/skills/
 
 - 运行 `sh tests/test-guard.sh`，会对中英两份守卫各跑一遍测试。
 - 两份 `guard.sh` 只有文案不同："shared logic" 标记以下的部分要保持一致，测试会检查。
+- README 里的两张图以 `docs/diagrams/` 下的 SVG 显示，折叠的 Mermaid 是源码。改了源码要重新导出对应的 SVG（中英文各两张），两边保持一致。
 
 ## 参考
 
