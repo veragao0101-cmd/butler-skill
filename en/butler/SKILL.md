@@ -111,7 +111,7 @@ All of a topic's state lives in `.claude/butler/<topic>/ledger.md`, not in the c
 - **Order by dependency**: if B needs A's result, dispatch B only after A is delivered and verified.
 - **At most 3 sub-sessions in progress at once.** A person can usually keep an eye on 3–5 sessions, and more sessions means more conflicts. Other tickets wait in the queue.
 - **Choosing how to execute**:
-  - Independent, larger tickets the user may want to look at or step into: a separate sub-session (`start_session`). The brief is the ticket itself, plus: "Change only files within your mandate; don't commit or switch branches without permission; report anything outside your mandate to the butler instead of asking the user; report in the format below, with details written to <absolute path of the ticket file>."
+  - Independent, larger tickets the user may want to look at or step into: a separate sub-session (`start_session`). The brief is the ticket itself, plus: "Change only files within your mandate; don't commit or switch branches without permission; report anything outside your mandate to the butler instead of asking the user; report at once if you get stuck or are waiting on someone, rather than at the end; report in the format below, with details written to <absolute path of the ticket file>."
   - Read-only research, searches and checks whose results are needed in this turn: a subagent (the Agent tool).
   - If the environment has no separate sub-sessions (e.g. the Claude Code terminal), use subagents for everything; the rules stay the same.
 - **Follow-ups go to the original Worker**: rework, additional changes or questions about a ticket go to its original sub-session via `SendMessage` — don't open a new session that has to learn everything again. If the user asks for a change directly in a sub-session and it falls within that ticket's scope, the Worker can make it and just sync the result into the ticket file.
@@ -199,4 +199,11 @@ Only come to the user when a decision or a sign-off is needed, and summarize onc
 2. **Needs your call**: write "none" if nothing
 3. **Recommendation**: your suggestion and a one-line reason
 
-No play-by-play. Between dispatching and having an outcome or a decision to ask for, send the user nothing — no "dispatched", "T-001 reported" or "verifying now" updates. If the user wants to see the process, give them the ticket ID and the sub-session link.
+No play-by-play, but the user must always know where things stand:
+
+- **When dispatching, say**: who is on it, what happens next once it's done, and what the user will hear from you next.
+- **Every time a Worker reports, give the user one status line before the turn ends**, such as "T-001 delivered → next: starting verification". Worker messages are folded in the interface, so the user only reads what the butler says. This line is not play-by-play and can't be skipped.
+- **If the next step can't start, say so at once**: for example a sub-session can't be opened (the environment may refuse new sessions on a turn woken by a Worker message), or the user needs to click a card or reply. Tell them exactly what to do instead of waiting silently.
+- **Stay quiet when nothing has changed**: no empty "still working" messages when there's no report and no change.
+
+ If the user wants to see the process, give them the ticket ID and the sub-session link.
