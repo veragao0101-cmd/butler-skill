@@ -182,10 +182,13 @@ On first use, the butler sets up `.claude/butler/` in your project:
 
 | File | Purpose |
 |---|---|
-| `ledger.md` | Global index, one row per ticket |
-| `rules.md` | Your project's red lines — **fill this in first** |
-| `tickets/T-xxx.md` | Goal, mandate, acceptance criteria, report log |
-| `contracts/C-xxx.md` | Fields, interfaces and conventions shared by several tickets |
+| `rules.md` | Shared by all topics: your project's red lines (**fill this in first**) and cross-topic decisions |
+| `<topic>/ledger.md` | This topic's index, one row per ticket |
+| `<topic>/ledger-archive.md` | Finished tickets and carried-out decisions; not read at startup |
+| `<topic>/tickets/T-xxx.md` | Goal, mandate, acceptance criteria, report log |
+| `<topic>/contracts/C-xxx.md` | Fields, interfaces and conventions shared by several tickets |
+
+**One ledger per topic**: when several unrelated things are going on, each gets its own topic, isolated from the others. `/butler migration continue` reads only `migration/` and `rules.md`. Keep one butler session per topic. With a single topic you can leave out the name; with several and no name, the butler lists them and asks.
 
 In git projects, `.claude/butler/` comes with its own `.gitignore`, so it stays out of git and Workers' worktrees don't get stale copies. To commit the ledger as well, just delete that `.gitignore`.
 
