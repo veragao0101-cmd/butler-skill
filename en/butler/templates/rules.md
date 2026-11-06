@@ -14,3 +14,10 @@
 (Examples)
 - Read `docs/design-guidelines.md` before building a new page
 - See `.claude/launch.json` for how to run a local preview
+
+## Cross-topic decisions
+
+(Decisions that constrain several topics go here. A decision that belongs to one topic goes in that topic's ledger.)
+
+| ID | Date | Decision | Related |
+|---|---|---|---|
