@@ -100,7 +100,7 @@ All of a topic's state lives in `.claude/butler/<topic>/ledger.md`, not in the c
 1. Read the ledger and `rules.md`. For a new job, send a subagent to read the project docs (`CLAUDE.md`, `AGENTS.md`, README), any relevant handover notes and the code to be changed, and bring back a summary of where things stand: which files are involved, how big they are, and which parts can be done separately. The butler doesn't read project code itself, not even for a quick look.
 2. If any of goal, scope or acceptance criteria is unclear, ask the user first — all at once, not piecemeal as you go.
 3. **First check whether the butler is worth it**: when the work touches only one or two files, has nothing to parallelize, and a normal session could finish it in ten-odd minutes — all three at once — opening tickets, dispatching Workers and verifying is slower and costs more tokens. Parts that can be built separately once a contract is set, such as frontend and backend or the two sides of an interface, count as parallelizable. If it really isn't worth it, tell the user in one sentence — "this doesn't need the butler; a normal session will be faster" — and let them decide. If they still want the butler, open a single ticket with no contracts and carry on with step 4.
-4. Split the job into tickets, define contracts, order them, write it all to the ledger, and send the user a short message to review. Dispatch only after the user confirms, even when there is only one ticket. In that message, list the calls you made yourself in the tickets (definitions, edge cases, defaults), so the user can correct them before work starts. Only an explicit go-ahead counts as confirmation; if the user asks a question or suggests changes, revise the plan and send it for review again.
+4. Split the job into tickets, define contracts, order them, write it all to the ledger, and send the user a short message to review. Dispatch only after the user confirms, even when there is only one ticket. In that message, list the calls you made yourself in the tickets (definitions, edge cases, defaults), so the user can correct them before work starts. Only an explicit go-ahead counts as confirmation; if the user asks a question or suggests changes, revise the plan and send it for review again. In the same message, ask **whether to run timed check-ins**, with your recommendation: suggest them for work expected to take over half an hour or with several Workers at once, and skip them for work that takes minutes. Record the choice in the ledger.
 
 ## Splitting and dispatching
 
@@ -127,6 +127,7 @@ The tool names used here (`start_session`, `use_worktree`, `SendMessage`, `list_
 | Start a separate sub-session, optionally in its own worktree | `start_session` (`use_worktree: true/false`) | Use subagents instead; if subagents support worktree isolation, use it; the rules stay the same |
 | Message an existing sub-session | `SendMessage` | Give rework and follow-ups to a new subagent, with the ticket file's path in the brief, and have it read the ticket log before doing anything |
 | Check sub-session status | `list_sessions` | Skip that step during check-ins and rely on the ticket logs |
+| Wake yourself on a timer | `CronCreate`, `CronDelete` | Tell the user timed check-ins aren't available here; updates come only on Worker reports or user messages |
 | Dispatch read-only research or verification | Agent tool (subagent) | — |
 
 A finished sub-session may not be able to message the butler on its own. Where the environment doesn't support that, the brief tells the Worker to write its four-part report into the ticket file when done; at every check-in the butler reads the ticket's Log and treats new entries as the Worker reporting back.
@@ -147,6 +148,12 @@ Every time the butler wakes up (a user message or a sub-session report), go over
 - Use `list_sessions` to check each sub-session's status (skip this if the environment doesn't support it).
 - For tickets in progress with no new report in a long while, ask for a status update first; if a ticket is confirmed stuck, mark it blocked and decide whether to re-split it or escalate to the user.
 - The test is "is there real progress", not "is the session still alive": repeated rework or going in circles on the same problem also counts as stuck.
+
+The butler normally wakes only on a user message or a Worker report. When the user agrees to timed check-ins:
+
+- Use the environment's scheduling tool (such as `CronCreate`) to wake yourself about every 20 minutes, adjusted to the length of the work, or at the interval the user names.
+- On each wake-up, run the checks above and give the user one status line: which ticket, latest progress, whether it's stuck. The user asked for this line, so it doesn't count as an empty message.
+- When all tickets are finished, the work is reassigned, or the user says stop, delete the schedule at once (such as `CronDelete`). Schedules live only in the current session, so a new session must set them again. Every wake-up costs tokens, so say so when turning them on.
 
 ## Prep work
 
