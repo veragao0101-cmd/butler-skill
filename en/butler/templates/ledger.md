@@ -11,7 +11,7 @@
 | ID | Goal | Executor (session link / session id / agent ID) | Status | Next step | Done date |
 |---|---|---|---|---|---|
 
-Status values: prep / queued / in progress / awaiting verification / rework / blocked / done. At most 3 sub-sessions "in progress" at once. Fill in the done date (YYYY-MM-DD) when a ticket passes verification; once a ticket passes verification and its open items have moved on, its row goes to `ledger-archive.md`. Keep "Next step" to one sentence.
+Status values: prep / queued / in progress / awaiting verification / rework / blocked / done. At most 3 code-writing sub-sessions at once, and 5 sub-sessions in total. Fill in the done date (YYYY-MM-DD) when a ticket passes verification; once a ticket passes verification and its open items have moved on, its row goes to `ledger-archive.md`. Keep "Next step" to one sentence.
 
 ## Awaiting your decision
 

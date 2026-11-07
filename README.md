@@ -32,7 +32,7 @@ So this project **borrows the design principles, not the infrastructure**:
 |---|---|---|
 | The Router only coordinates, never executes | ✅ | The butler session writes only the ledger, tickets, contracts and rules under `.claude/butler/` — no project files, no builds, no screenshots |
 | Enforce delegation by structure, not by encouraging prompts | ✅ | With a neutral prompt, DeepSeek's experiment saw 0 delegations in 5 runs, so here it's a hard rule, backed by a hook that asks you before the butler session writes project files or runs commands |
-| Isolated, parallel Workers | ✅ | Separate sub-sessions (worktrees in git projects), at most 3 at once |
+| Isolated, parallel Workers | ✅ | Separate sub-sessions you can see by default (worktrees in git projects), at most 3 writing code and 5 in total |
 | Ticket + Mandate | ✅ | One ticket per subtask, with an explicit mandate; external content can't widen it |
 | Thread subscription, straight to the original Worker | ✅ | Rework and follow-ups go back to the original sub-session — no new session, no re-briefing through the butler |
 | Chain of Recall / Inline & Spill | ✅ | The ledger is only an index; details live in ticket files, expanded by ID |
@@ -67,11 +67,11 @@ flowchart TB
 
     R -->|dispatch ticket| W1[Sub-session T-001]
     R -->|dispatch ticket| W2[Sub-session T-002]
-    R -->|read-only research / verification| SA[subagent]
+    R -->|quick read-only checks| SA[subagent]
 
     W1 -->|outcome + open items| R
     W2 -->|outcome + open items| R
-    SA -->|pass / fail| R
+    SA -->|result| R
 
     W1 -.->|full report| S
     W2 -.->|full report| S
@@ -108,10 +108,10 @@ stateDiagram-v2
     [*] --> Prep: butler does read-only prep
     [*] --> Queued: ticket split out
     Prep --> Queued: you confirm
-    Queued --> InProgress: slot free (≤3 concurrent)
+    Queued --> InProgress: slot free
     InProgress --> Verify: Worker reports done
     InProgress --> Blocked: check-in finds no progress
-    Verify --> Done: verification subagent passes
+    Verify --> Done: verification passes
     Verify --> Rework: fails
     Rework --> InProgress: back to the original Worker
     Rework --> Blocked: still failing after two rounds

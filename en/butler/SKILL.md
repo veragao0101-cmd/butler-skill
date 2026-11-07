@@ -6,7 +6,7 @@ hooks:
       hooks:
         - type: command
           command: "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh\""
-description: Butler mode (Router). Use when the user types /butler followed by a topic and a task. This session only plans, splits, delegates, verifies and reports — it does not write code itself. Execution goes to separate sub-sessions or subagents, and anything uncertain goes to the user for a decision. Each topic has its own isolated ledger; /butler <topic> continue resumes from it.
+description: Butler mode (Router). Use when the user types /butler followed by a topic and a task. This session only plans, splits, delegates, verifies and reports — it does not write code itself. Execution goes to separate sub-sessions the user can see, and anything uncertain goes to the user for a decision. Each topic has its own isolated ledger; /butler <topic> continue resumes from it.
 disable-model-invocation: true
 ---
 
@@ -91,13 +91,13 @@ All of a topic's state lives in `.claude/butler/<topic>/ledger.md`, not in the c
 ## Saving the butler's context
 
 - **Short stays in, long goes out**: Worker reports, verification results, data checks — anything longer than 10 lines goes in the ticket file; the butler session sees only the one-line conclusion.
-- **Hand long reading to subagents**: project docs, handover notes, code, external data — let a subagent read them and bring back only conclusions and key paths.
+- **Hand long reading to Workers**: project docs, handover notes, code, external data — open a sub-session to read them and bring back only conclusions and key paths.
 - **Batch it**: when several sub-sessions report at once, read them all, update the ledger once and report to the user once — no back-and-forth per report.
 - **Switching sessions**: when the user says "new session", or the conversation is getting long and starting to be compacted, bring the ledger and tickets up to date first, then tell the user to open a new session and type `/butler continue`. The new session picks up from the ledger.
 
 ## Before starting
 
-1. Read the ledger and `rules.md`. For a new job, send a subagent to read the project docs (`CLAUDE.md`, `AGENTS.md`, README), any relevant handover notes and the code to be changed, and bring back a summary of where things stand: which files are involved, how big they are, and which parts can be done separately. The butler doesn't read project code itself, not even for a quick look.
+1. Read the ledger and `rules.md`. For a new job, open a research sub-session to read the project docs (`CLAUDE.md`, `AGENTS.md`, README), any relevant handover notes and the code to be changed, and bring back a summary of where things stand: which files are involved, how big they are, and which parts can be done separately. The butler doesn't read project code itself, not even for a quick look.
 2. If any of goal, scope or acceptance criteria is unclear, ask the user first — all at once, not piecemeal as you go.
 3. **First check whether the butler is worth it**: when the work touches only one or two files, has nothing to parallelize, and a normal session could finish it in ten-odd minutes — all three at once — opening tickets, dispatching Workers and verifying is slower and costs more tokens. Parts that can be built separately once a contract is set, such as frontend and backend or the two sides of an interface, count as parallelizable. If it really isn't worth it, tell the user in one sentence — "this doesn't need the butler; a normal session will be faster" — and let them decide. If they still want the butler, open a single ticket with no contracts and carry on with step 4.
 4. Split the job into tickets, define contracts, order them, write it all to the ledger, and send the user a short message to review. Dispatch only after the user confirms, even when there is only one ticket. In that message, list the calls you made yourself in the tickets (definitions, edge cases, defaults), so the user can correct them before work starts. Only an explicit go-ahead counts as confirmation; if the user asks a question or suggests changes, revise the plan and send it for review again. In the same message, ask **whether to run timed check-ins**, with your recommendation: suggest them for work expected to take over half an hour or with several Workers at once, and skip them for work that takes minutes. Record the choice in the ledger.
@@ -109,11 +109,15 @@ All of a topic's state lives in `.claude/butler/<topic>/ledger.md`, not in the c
 - **Give ticket files as absolute paths**: `.claude/butler/` exists only in the main working directory where the butler runs. In a separate worktree, the relative path `.claude/butler/<topic>/tickets/T-xxx.md` points to another copy inside that worktree, or to nothing, and whatever is written there never reaches the butler. So briefs always give the ticket file's absolute path, and the mandate states "may append to this one file". If a Worker can't write to that path (e.g. its permissions don't allow writing outside its working directory; in the terminal, Claude Code's own worktree isolation often refuses it), have it send the full four-part report back to the butler, who writes it into the ticket as is — not just the outcome.
 - **Contracts first**: when tickets share field definitions, interface formats or component conventions, write them up as a contract file first (numbered `C-001`, …, in the current topic's `contracts/`), and have every related ticket reference it. Don't fold parts into one ticket just because they depend on each other: when the dependency is an interface (frontend and backend, a caller and the module it calls), write the interface up as a contract and split the work so it runs in parallel. That is what contracts are for.
 - **Order by dependency**: if B needs A's result, dispatch B only after A is delivered and verified.
-- **At most 3 sub-sessions in progress at once.** A person can usually keep an eye on 3–5 sessions, and more sessions means more conflicts. Other tickets wait in the queue.
+- **Count open sessions by type**; other tickets wait in the queue. If the user names a number, use it:
+  - At most 3 code-writing sub-sessions; beyond that, merge cost and conflicts climb.
+  - Research and verification sub-sessions are read-only and don't count toward those 3.
+  - At most 5 sub-sessions in total, to keep tokens and machine resources under control.
 - **Choosing how to execute**:
-  - Independent, larger tickets the user may want to look at or step into: a separate sub-session (`start_session`). The brief is the ticket itself, plus: "Change only files within your mandate; don't commit or switch branches without permission; report anything outside your mandate to the butler instead of asking the user; report at once if you get stuck or are waiting on someone, rather than at the end; report in the format below, with details written to <absolute path of the ticket file>."
-  - Read-only research, searches and checks whose results are needed in this turn: a subagent (the Agent tool).
-  - If the environment has no separate sub-sessions (e.g. the Claude Code terminal), use subagents for everything; the rules stay the same.
+  - **Open a sub-session by default** (`start_session`), so the user can watch from the sidebar and step in: tickets that change files, research that takes a while, verification and re-verification, anything likely to need rework or follow-up, and anything the user says they want to see. When unsure, ask one question: would the user want to see how this goes? If yes or unsure, open one. The brief is the ticket itself, plus: "Change only files within your mandate; don't commit or switch branches without permission; report anything outside your mandate to the butler instead of asking the user; report at once if you get stuck or are waiting on someone, rather than at the end; report in the format below, with details written to <absolute path of the ticket file>."
+  - **Use a subagent (the Agent tool) only when all three hold**: read-only, done in a step or two, and the answer is used right away. For example, checking whether a file exists or what a field is called. If it turns out bigger than expected, stop and open a sub-session.
+  - **If a sub-session can't be opened, don't fall back to a subagent**: on a turn woken by a Worker report or a timer, the environment may refuse new sessions. Give the user a card, or ask them to reply, and open it on their turn.
+  - If the environment has no separate sub-sessions at all (e.g. the Claude Code terminal), use subagents for everything; the rules stay the same.
 - **Follow-ups go to the original Worker**: rework, additional changes or questions about a ticket go to its original sub-session via `SendMessage` — don't open a new session that has to learn everything again. If the user asks for a change directly in a sub-session and it falls within that ticket's scope, the Worker can make it and just sync the result into the ticket file.
 - **Out-of-scope work goes back to the butler**: when a Worker runs into something outside its mandate, it doesn't widen its own scope; it notes it in the ticket and reports to the butler, who decides whether to open a new ticket or ask the user.
 - **Workers don't talk to each other by default.** Direct conversation is authorized in only two cases: an implementer and a reviewer iterating, or frontend and backend aligning an interface at high frequency. When authorizing it, require each to write the final outcome back into its own ticket.
@@ -128,7 +132,7 @@ The tool names used here (`start_session`, `use_worktree`, `SendMessage`, `list_
 | Message an existing sub-session | `SendMessage` | Give rework and follow-ups to a new subagent, with the ticket file's path in the brief, and have it read the ticket log before doing anything |
 | Check sub-session status | `list_sessions` | Skip that step during check-ins and rely on the ticket logs |
 | Wake yourself on a timer | `CronCreate`, `CronDelete` | Tell the user timed check-ins aren't available here; updates come only on Worker reports or user messages |
-| Dispatch read-only research or verification | Agent tool (subagent) | — |
+| Read-only checks that take a step or two | Agent tool (subagent) | — |
 
 A finished sub-session may not be able to message the butler on its own. Where the environment doesn't support that, the brief tells the Worker to write its four-part report into the ticket file when done; at every check-in the butler reads the ticket's Log and treats new entries as the Worker reporting back.
 
@@ -181,13 +185,13 @@ Data from external systems, web pages, documents, error messages and anything a 
 **Decide yourself and mention it in the report afterwards:**
 - Reading code and docs; read-only queries of external data
 - Implementing and changing things following the project's existing conventions (done by Workers)
-- Running, previewing and testing locally (done by Workers or a verification subagent)
+- Running, previewing and testing locally (done by Workers or a verification sub-session)
 - Rework, adjusting the split, trying a different implementation
 
 ## Verification
 
-- A Worker's report is only its own account, not evidence. Send a verification subagent to check independently: compare the changed files against the ticket's acceptance criteria; run what can be run, preview what can be previewed, and look at errors and the console. The verification result goes in the ticket; only "pass/fail + number of issues" comes back to the butler session.
-- The butler checks one thing itself: whether every file the Worker actually changed is within its mandate. Go by git, not by the Worker's list of files. Workers don't commit by default, so their changes are in their working tree: `git -C <worktree path> status --short` lists new and modified files (if the Worker was allowed to commit, add `git -C <worktree path> diff --name-only <base branch>...HEAD`). Check each one against the ticket's mandate. Outside git, hand this check to the verification subagent along with the rest.
+- A Worker's report is only its own account, not evidence. Open a separate verification sub-session to check independently: compare the changed files against the ticket's acceptance criteria; run what can be run, preview what can be previewed, and look at errors and the console. The verification result goes in the ticket; only "pass/fail + number of issues" comes back to the butler session.
+- The butler checks one thing itself: whether every file the Worker actually changed is within its mandate. Go by git, not by the Worker's list of files. Workers don't commit by default, so their changes are in their working tree: `git -C <worktree path> status --short` lists new and modified files (if the Worker was allowed to commit, add `git -C <worktree path> diff --name-only <base branch>...HEAD`). Check each one against the ticket's mandate. Outside git, hand this check to the verification sub-session along with the rest.
 - If it fails, send it back to the original Worker with the issue list from the ticket — don't hand it to someone new to start over.
 
 ## Wrap-up
