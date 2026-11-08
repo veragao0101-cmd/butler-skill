@@ -30,7 +30,7 @@
 
 | Super-agent 的做法 | 是否采纳 | 在 butler 里的样子 |
 |---|---|---|
-| Router 只协调，不执行 | ✅ | 管家窗口只能写 `.claude/butler/` 下的台账、工单、契约、规则，不改项目文件、不跑构建、不截图 |
+| Router 只协调，不执行 | ✅ | 管家窗口只能写 `.butler/` 下的台账、工单、契约、规则，不改项目文件、不跑构建、不截图 |
 | 靠结构约束，而不是靠提示词鼓励委派 | ✅ | DeepSeek 实验里中性提示词 0/5 次委派，所以写成硬性规定，并用 hook 把关：管家窗口要改项目文件或跑命令，先问你 |
 | Worker 隔离、并行 | ✅ | 默认开你看得见的独立子会话（git 项目用 worktree），写代码的最多 3 个，总共最多 5 个 |
 | Ticket + Mandate | ✅ | 每个子任务一张工单，写明授权范围；外部内容不能扩大授权 |
@@ -167,7 +167,7 @@ cp -r butler-skill/butler ~/.claude/skills/
 
 管家模式只能由你手动输入 `/butler` 进入，Claude 不会自己把会话切成管家模式。
 
-第一次使用时，管家会在项目里建好 `.claude/butler/`：
+第一次使用时，管家会在项目里建好 `.butler/`：
 
 | 文件 | 作用 |
 |---|---|
@@ -179,7 +179,7 @@ cp -r butler-skill/butler ~/.claude/skills/
 
 **一个主题一本台账**：同时做几件互不相干的事时，每件事一个主题，彼此隔离：`/butler 换栈 继续` 只读 `换栈/` 和 `规则.md`。每个主题同时只开一个管家窗口。只有一个主题时可以不写主题名；有多个又没写时，管家会列出来问你。
 
-在 git 项目里，`.claude/butler/` 会自带一个 `.gitignore`，默认不进 git，Worker 的 worktree 里也不会出现过期副本。想把台账一起提交，删掉这个 `.gitignore` 即可。
+在 git 项目里，`.butler/` 会自带一个 `.gitignore`，默认不进 git，Worker 的 worktree 里也不会出现过期副本。想把台账一起提交，删掉这个 `.gitignore` 即可。
 
 ### 环境要求
 
@@ -190,9 +190,9 @@ cp -r butler-skill/butler ~/.claude/skills/
 
 ## 六、局限
 
-- 管家窗口的边界由 skill 自带的 PreToolUse hook（`scripts/guard.sh`）把关：管家要写 `.claude/butler/` 以外的文件，或者跑只读白名单以外的命令时，Claude Code 会先弹窗问你。想让管家自己动手就批准；拒绝的话，它会把这件事开成工单。Worker 子会话和 subagent 不受影响。
-  - **不拦的**：查看文件和环境的只读命令（`grep`、`rg`、`find`、`sort`、`uniq`、`diff`、`stat`、`du`、`which`、`command -v`、按行号打印的 `sed -n`、`java -version` 这类查版本的命令等），不改仓库的 git 查询，以及管家在 `.claude/butler/` 里用 `>`、heredoc、`mkdir`、`cp`、`mv`、`rm`、`touch`、`tee` 维护自己的文件。
-  - **会问你的**：写 `.claude/butler/` 以外的文件；`python`、`node` 这类能执行任意代码的解释器；构建、测试、起服务器；`sed -i`、`find -delete`、`sort -o` 这类会改文件的写法。
+- 管家窗口的边界由 skill 自带的 PreToolUse hook（`scripts/guard.sh`）把关：管家要写 `.butler/` 以外的文件，或者跑只读白名单以外的命令时，Claude Code 会先弹窗问你。想让管家自己动手就批准；拒绝的话，它会把这件事开成工单。Worker 子会话和 subagent 不受影响。
+  - **不拦的**：查看文件和环境的只读命令（`grep`、`rg`、`find`、`sort`、`uniq`、`diff`、`stat`、`du`、`which`、`command -v`、按行号打印的 `sed -n`、`java -version` 这类查版本的命令等），不改仓库的 git 查询，以及管家在 `.butler/` 里用 `>`、heredoc、`mkdir`、`cp`、`mv`、`rm`、`touch`、`tee` 维护自己的文件。
+  - **会问你的**：写 `.butler/` 以外的文件；`python`、`node` 这类能执行任意代码的解释器；构建、测试、起服务器；`sed -i`、`find -delete`、`sort -o` 这类会改文件的写法。
 
   守卫有这些局限：
   - 从输入 `/butler` 起到会话结束有效。用 `--resume`、`--continue` 或重新打开来恢复旧会话，守卫不会跟着恢复，要再输入一次 `/butler 继续`。

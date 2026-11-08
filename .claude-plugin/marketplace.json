@@ -10,7 +10,7 @@
       "name": "butler",
       "source": "./en/butler",
       "displayName": "Butler",
-      "description": "Butler mode (Router), English edition. The session only plans, splits, delegates, verifies and reports; execution goes to sub-sessions or subagents, and uncertain calls go to you. Uses English file names under .claude/butler/.",
+      "description": "Butler mode (Router), English edition. The session only plans, splits, delegates, verifies and reports; execution goes to sub-sessions or subagents, and uncertain calls go to you. Uses English file names under .butler/.",
       "author": {
         "name": "veragao0101-cmd"
       },
@@ -24,7 +24,7 @@
       "name": "butler-zh",
       "source": "./butler",
       "displayName": "Butler（中文）",
-      "description": "管家模式（Router）中文版。本会话只做规划、拆分、分派、验收和汇报，执行交给子会话或 subagent，拿不准的事项找你拍板。.claude/butler/ 下使用中文文件名。",
+      "description": "管家模式（Router）中文版。本会话只做规划、拆分、分派、验收和汇报，执行交给子会话或 subagent，拿不准的事项找你拍板。.butler/ 下使用中文文件名。",
       "author": {
         "name": "veragao0101-cmd"
       },

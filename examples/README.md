@@ -2,7 +2,7 @@
 
 **English** | [简体中文](#示例)
 
-Real runs of the `butler` skill, end to end, on the same small task: add a web UI (a JSON API plus a single-page frontend) to a tiny Node.js todo CLI. Each folder has a walkthrough with every message the butler sent, quoted verbatim, and a snapshot of the `.claude/butler/` folder it left behind.
+Real runs of the `butler` skill, end to end, on the same small task: add a web UI (a JSON API plus a single-page frontend) to a tiny Node.js todo CLI. Each folder has a walkthrough with every message the butler sent, quoted verbatim, and a snapshot of the `.butler/` folder it left behind.
 
 | Run | Skill edition | What it shows |
 |---|---|---|
@@ -19,7 +19,7 @@ They're not polished demos. Both runs also showed where the skill fell short: th
 
 [English](#examples) | **简体中文**
 
-`butler` skill 的真实运行记录，从头到尾跑完，两次用的是同一个小任务：给一个 Node.js 待办命令行工具加网页界面（JSON 接口加单页前端）。每个文件夹里有一份经过说明，原样引用了管家发给用户的每一条消息，还有它留下的 `.claude/butler/` 快照。
+`butler` skill 的真实运行记录，从头到尾跑完，两次用的是同一个小任务：给一个 Node.js 待办命令行工具加网页界面（JSON 接口加单页前端）。每个文件夹里有一份经过说明，原样引用了管家发给用户的每一条消息，还有它留下的 `.butler/` 快照。
 
 | 记录 | skill 版本 | 展示了什么 |
 |---|---|---|

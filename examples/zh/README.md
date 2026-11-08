@@ -16,11 +16,11 @@
 /butler 给 tiny-todo 加一个网页界面：用 Node 自带模块写一个小 HTTP 服务（不装依赖），基于现有的 todo.js 提供 JSON 接口，能列出待办、新增待办、标记完成；同一个服务再提供一个单页前端，在网页上能看、能加、能勾选完成。接口要有测试，README 里写清楚怎么启动。
 ```
 
-管家建好 `.claude/butler/`（台账、规则、`工单/`、`契约/`，再加一个只有 `*` 的 `.gitignore`），自己用 `cat` 看了 `todo.js`、`package.json` 和 README，然后回复：
+管家建好 `.butler/`（台账、规则、`工单/`、`契约/`，再加一个只有 `*` 的 `.gitignore`），自己用 `cat` 看了 `todo.js`、`package.json` 和 README，然后回复：
 
 > **结论**:这件事不必用管家。要改的是新增 `server.js`、一个前端页面、测试文件和 README,代码量小,没有能并行的部分。开工单、派 Worker、再验收,比在普通会话里直接做更慢、更费 token。
 >
-> 我已经在 `.claude/butler/` 建好台账和规则,并放了 `.gitignore`,所以这些文件不会进 git。项目特有的红线可以写进 `.claude/butler/规则.md`。
+> 我已经在 `.butler/` 建好台账和规则,并放了 `.gitignore`,所以这些文件不会进 git。项目特有的红线可以写进 `.butler/规则.md`。
 >
 > **需要你拍板**:选一个。
 > - A:改在普通会话里直接做。
@@ -64,7 +64,7 @@
 > - 前端是单文件,JS 和 CSS 内联,不用任何外部资源。
 > - 前端用 `textContent` 渲染用户输入,防止注入。
 >
-> **需要你拍板**:是否按这个拆分派发?详情见 `.claude/butler/契约/C-001.md` 和 `工单/T-001.md`、`T-002.md`。
+> **需要你拍板**:是否按这个拆分派发?详情见 `.butler/契约/C-001.md` 和 `工单/T-001.md`、`T-002.md`。
 >
 > **推荐**:确认后派发。接口格式已在契约里写死,并行做不会对不上。
 
@@ -178,15 +178,15 @@
 
 **守卫**只拦过一次。管家想用 heredoc 把 T-001 的返工汇报追加进工单，收到：
 
-> PreToolUse:Bash hook error: 管家守卫：管家窗口只能跑只读查看命令，这条不行：heredoc <<。允许的有：ls、cat、head、tail、wc、pwd、cd、echo；git status、git diff --stat、git diff --name-only、git log、git show、git ls-files、git rev-parse、git branch、git worktree list（可加 -C <路径>）；往 .claude/butler/ 里 mkdir、cp、输出重定向。命令写直白些：路径写全，不用变量。 请把这件事开成工单派给 Worker。当前是 bypassPermissions 模式，守卫没法弹窗问用户，只能直接拒绝；用户真要管家自己改，得先切换到别的权限模式。
+> PreToolUse:Bash hook error: 管家守卫：管家窗口只能跑只读查看命令，这条不行：heredoc <<。允许的有：ls、cat、head、tail、wc、pwd、cd、echo；git status、git diff --stat、git diff --name-only、git log、git show、git ls-files、git rev-parse、git branch、git worktree list（可加 -C <路径>）；往 .butler/ 里 mkdir、cp、输出重定向。命令写直白些：路径写全，不用变量。 请把这件事开成工单派给 Worker。当前是 bypassPermissions 模式，守卫没法弹窗问用户，只能直接拒绝；用户真要管家自己改，得先切换到别的权限模式。
 
-要写的是 `.claude/butler/` 里的文件，本来允许，被拦的只是写法，末尾那句"开成工单"在这里不适用。管家没有换命令硬写，改用 Edit 写进了工单。
+要写的是 `.butler/` 里的文件，本来允许，被拦的只是写法，末尾那句"开成工单"在这里不适用。管家没有换命令硬写，改用 Edit 写进了工单。
 
 **Claude Code 自带的 worktree 隔离**也拦过 Worker。worktree 里的 subagent 写主目录下的工单文件时，heredoc 命令和 Edit 都被拒绝，Edit 的报错是"Edit the worktree copy of this file instead of the shared-checkout path."。拦得不一致：T-001 第一次用 heredoc 追加成功了，T-002 和 T-001 返工时都被拒。T-001 返工时 Worker 把四项汇报发回管家，由管家代记。T-002 的 Worker 改用一条 `printf`，只写了一行"详见 Worker 返回消息"，管家后来也没补全，所以 T-002 里的 Worker 汇报只有结论。
 
 ## 结果
 
-管家窗口没有改过项目文件：主线程的 27 次 Write/Edit 都在 `.claude/butler/` 里，21 次 Bash 里有 20 次是 `ls`、`cat`、`head`、`tail`、`mkdir`、`cp` 和只读的 git 查询，剩下 1 次是上面被拦的 heredoc。
+管家窗口没有改过项目文件：主线程的 27 次 Write/Edit 都在 `.butler/` 里，21 次 Bash 里有 20 次是 `ls`、`cat`、`head`、`tail`、`mkdir`、`cp` 和只读的 git 查询，剩下 1 次是上面被拦的 heredoc。
 
 ```
 $ git log --oneline
@@ -251,4 +251,4 @@ token 数取自每次调用前后 `modelUsage` 的差值，包含 subagent。一
 - **汇报**：派发之后、有结论或要拍板之前，不给用户发消息。
 - **工单路径**：终端版 worktree 里的 Worker 常常写不进工单文件，发回的四项汇报要原样记进工单，不能只记结论。
 - **收尾**：合并和清理由管家先写成工单再派发；Worker 汇报后管家自己用 git 核实，结果记进这张工单。
-- **守卫**：只是写法没法核对而被拦下时（比如用 heredoc 写工单），提示改为先换成直白写法再试，不再一律提示开成工单；`cd` 之后用 `cp` 写到 `.claude/butler/` 里的绝对路径，不再拦。
+- **守卫**：只是写法没法核对而被拦下时（比如用 heredoc 写工单），提示改为先换成直白写法再试，不再一律提示开成工单；`cd` 之后用 `cp` 写到 `.butler/` 里的绝对路径，不再拦。

@@ -16,14 +16,14 @@ tiny-todo is a Node.js command-line todo list: `todo.js` (add / done / list, JSO
 
 Times are UTC. Every message is quoted in full. The status updates that asked for nothing are folded away, with their word counts shown.
 
-**Turn 1, 09:14:34.** The butler read the code itself and set up `.claude/butler/`. It wrote one ticket and no contract, then stopped for review:
+**Turn 1, 09:14:34.** The butler read the code itself and set up `.butler/`. It wrote one ticket and no contract, then stopped for review:
 
-> I've set up `.claude/butler/` and written the plan, but I haven't dispatched anything yet. I need your OK first.
+> I've set up `.butler/` and written the plan, but I haven't dispatched anything yet. I need your OK first.
 >
 > **Outcome:** There's one ticket, T-001. It covers `server.js`, `public/index.html`, `test/server.test.js`, the README and a `start` script. These files depend on each other, so splitting them would only cause conflicts.
 >
 > **Needs your call:**
-> - Setup added `.claude/butler/.gitignore` containing `*`, so the butler's working files stay out of git. Delete it if you want them committed. Project-specific red lines go in `.claude/butler/rules.md`.
+> - Setup added `.butler/.gitignore` containing `*`, so the butler's working files stay out of git. Delete it if you want them committed. Project-specific red lines go in `.butler/rules.md`.
 > - This job probably doesn't need the butler. A normal session would likely be faster and cheaper.
 > - If you do want the butler, here are the calls I made:
 >   - `GET /api/todos` returns the list.
@@ -142,11 +142,11 @@ The merge Worker created the T-004 file from the butler's brief, so the file has
 
 The Workers ran in parallel, per the task events in the stream log. T-001 and T-002 started at 09:15:42 and 09:15:45. T-001 finished at 09:16:33, and its verifier ran from 09:16:44 to 09:17:29 while T-002 was still working. T-002 finished at 09:21:31. About four of its minutes went on headless `google-chrome`, which hung, before it tested its script with a fake DOM. At most two subagents ran at once, so the cap of 3 never came into play.
 
-The guard held back one main-thread command, in turn 1. That command was `mkdir -p … && cd <skill>/templates && cp ledger.md rules.md <project>/.claude/butler/`:
+The guard held back one main-thread command, in turn 1. That command was `mkdir -p … && cd <skill>/templates && cp ledger.md rules.md <project>/.butler/`:
 
-> PreToolUse:Bash hook error: Butler guard: the butler session may only run read-only inspection commands, and this one is not allowed: writing with cp after cd, so the path cannot be checked. Allowed: ls, cat, head, tail, wc, pwd, cd, echo; git status, git diff --stat, git diff --name-only, git log, git show, git ls-files, git rev-parse, git branch, git worktree list (optionally with -C <path>); mkdir, cp and output redirection into .claude/butler/. Keep commands plain: literal paths, no variables. Turn this into a ticket for a Worker. The session is in bypassPermissions mode, where the guard cannot ask the user, so it refuses. If the user really wants the butler to do this itself, they have to switch to another permission mode first.
+> PreToolUse:Bash hook error: Butler guard: the butler session may only run read-only inspection commands, and this one is not allowed: writing with cp after cd, so the path cannot be checked. Allowed: ls, cat, head, tail, wc, pwd, cd, echo; git status, git diff --stat, git diff --name-only, git log, git show, git ls-files, git rev-parse, git branch, git worktree list (optionally with -C <path>); mkdir, cp and output redirection into .butler/. Keep commands plain: literal paths, no variables. Turn this into a ticket for a Worker. The session is in bypassPermissions mode, where the guard cannot ask the user, so it refuses. If the user really wants the butler to do this itself, they have to switch to another permission mode first.
 
-The destination was a literal path inside `.claude/butler/`, so this hold was overcautious. The butler wrote the files with the Write tool instead. Every other main-thread command was read-only (`ls`, `cat`, `git status`/`worktree list`/`branch`/`show --stat`). The butler ran no project code and edited no project files.
+The destination was a literal path inside `.butler/`, so this hold was overcautious. The butler wrote the files with the Write tool instead. Every other main-thread command was read-only (`ls`, `cat`, `git status`/`worktree list`/`branch`/`show --stat`). The butler ran no project code and edited no project files.
 
 ## Outcome
 
@@ -205,4 +205,4 @@ This run, together with the Chinese one, led to these changes. The transcript ab
 - **Reports:** no messages to the user between dispatch and an outcome or a decision.
 - **Ticket path:** in the terminal, Workers in a worktree often can't write the ticket file; the four-part report they send back goes into the ticket as is, not just the outcome.
 - **Wrap-up:** the butler writes the merge-and-cleanup ticket itself before dispatching it, checks the result with git rather than relying on the Worker's report, and records it in that ticket.
-- **Guard:** writing with `cp` after `cd` is allowed when the destination is an absolute path inside `.claude/butler/`. When a command is held back only because of how it's written (a heredoc into a ticket, say), the message suggests a plainer form first instead of a ticket.
+- **Guard:** writing with `cp` after `cd` is allowed when the destination is an absolute path inside `.butler/`. When a command is held back only because of how it's written (a heredoc into a ticket, say), the message suggests a plainer form first instead of a ticket.

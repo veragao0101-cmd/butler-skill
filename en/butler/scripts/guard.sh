@@ -4,10 +4,10 @@
 # Once the user types /butler, Claude Code runs this script before every Bash, Write,
 # Edit, MultiEdit, NotebookEdit and PowerShell call on this session's main thread,
 # passing the call (JSON) on stdin.
-# - File writes: allowed only when the target is inside <project root>/.claude/butler/.
+# - File writes: allowed only when the target is inside <project root>/.butler/.
 # - Bash: only the read-only inspection commands listed under "Role boundaries";
 #   in a compound command every part must be on the list. Output redirection,
-#   heredocs, mkdir, cp, mv, rm, touch and tee are allowed only inside .claude/butler/.
+#   heredocs, mkdir, cp, mv, rm, touch and tee are allowed only inside .butler/.
 # - Calls made inside a subagent (input carries agent_id) are left alone.
 # When something is not allowed it answers "ask": Claude Code shows a permission prompt
 # and the user decides — approve if they said "just change it yourself", otherwise deny.
@@ -22,12 +22,12 @@
 M_PREFIX='Butler guard: '
 M_SEP=' '
 M_TICKET='Turn this into a ticket for a Worker.'
-M_FORM='If this only writes files under .claude/butler/ or is a read-only query, write it plainly and try again (use the file-writing or editing tool, or literal paths with no variables or $(...)); otherwise turn it into a ticket for a Worker.'
+M_FORM='If this only writes files under .butler/ or is a read-only query, write it plainly and try again (use the file-writing or editing tool, or literal paths with no variables or $(...)); otherwise turn it into a ticket for a Worker.'
 M_ASK='Only the user can let this step through, in the permission prompt: they approve if they explicitly said "just change it yourself" in this session, and deny otherwise.'
 M_DENY='The session is in bypassPermissions mode, where the guard cannot ask the user, so it refuses. If the user really wants the butler to do this itself, they have to switch to another permission mode first.'
-M_WRITE='the butler session may only write files under .claude/butler/; this write targets '
+M_WRITE='the butler session may only write files under .butler/; this write targets '
 M_BASH='the butler session may only run read-only inspection commands, and this one is not allowed: '
-M_BASH_OK='. Allowed: ls, cat, head, tail, wc, pwd, cd, echo, grep, rg, find, sort, uniq, diff, cmp, comm, stat, du, realpath, basename, dirname, which, command -v, sed -n printing line ranges, and <tool> --version; git status, git diff --stat, git diff --name-only, git log, git show, git ls-files, git rev-parse, git branch, git worktree list (optionally with -C <path>); mkdir, cp, mv, rm, touch, tee, output redirection and heredocs inside .claude/butler/.'
+M_BASH_OK='. Allowed: ls, cat, head, tail, wc, pwd, cd, echo, grep, rg, find, sort, uniq, diff, cmp, comm, stat, du, realpath, basename, dirname, which, command -v, sed -n printing line ranges, and <tool> --version; git status, git diff --stat, git diff --name-only, git log, git show, git ls-files, git rev-parse, git branch, git worktree list (optionally with -C <path>); mkdir, cp, mv, rm, touch, tee, output redirection and heredocs inside .butler/.'
 M_STOP='.'
 M_PS='PowerShell commands are not parsed in the butler session, so you are asked every time.'
 M_PARSE='could not read this call'"'"'s arguments, so you are asked.'
@@ -41,7 +41,7 @@ detail() {
     opt) printf 'option or argument %s would write files or run commands' "$2" ;;
     sed) printf 'sed is allowed only as -n with line numbers (e.g. sed -n 12,40p file); this one is %s' "$2" ;;
     fileargs) printf '%s is missing its file arguments' "$2" ;;
-    interp) printf '%s can run arbitrary code; to change files under .claude/butler/, use the file-writing or editing tool' "$2" ;;
+    interp) printf '%s can run arbitrary code; to change files under .butler/, use the file-writing or editing tool' "$2" ;;
     assign) printf 'environment variable assignment before the command %s' "$2" ;;
     cmd) printf '%s is not on the allowlist' "$2" ;;
     gitopt) printf 'git option %s' "$2" ;;
@@ -53,7 +53,7 @@ detail() {
     cdwrite) printf 'writing with %s after cd, so the path cannot be checked' "$2" ;;
     follow) printf 'tail %s never returns' "$2" ;;
     unverifiable) printf 'path %s contains variables or wildcards and cannot be checked' "$2" ;;
-    outside) printf '%s is not inside .claude/butler/' "$2" ;;
+    outside) printf '%s is not inside .butler/' "$2" ;;
     long) printf 'the command is too long to check' ;;
     *) printf 'unbalanced quotes or syntax the guard cannot read %s' "$2" ;;
   esac
@@ -295,7 +295,7 @@ function cpcheck(s, n,   j, a, endopt, cnt, last) {
   if (cnt < 2) { block("cpargs", ""); return }
   inside(last, "cp", s)
 }
-# Commands that only touch files: every non-option argument must land inside .claude/butler/.
+# Commands that only touch files: every non-option argument must land inside .butler/.
 function filecheck(s, n, what, optre,   j, a, endopt, cnt) {
   endopt = 0; cnt = 0
   for (j = 2; j <= n && !blocked; j++) {
@@ -363,7 +363,7 @@ function evalsegs(   s, n, k, cmd, cdseg, pos) {
     if (cmd == "command") { if (n >= 3 && (W[s, 2] == "-v" || W[s, 2] == "-V")) continue; block("cmd", cmd); return }
     # tool version probes such as java -version or node --version (bare command names only)
     if (n == 2 && (W[s, 2] == "--version" || W[s, 2] == "-version") && cmd !~ /\//) continue
-    # files of the butler itself: create, append, move and delete inside .claude/butler/ only
+    # files of the butler itself: create, append, move and delete inside .butler/ only
     if (cmd == "touch") { filecheck(s, n, "touch", "^-[acm]+$"); continue }
     if (cmd == "rm") { filecheck(s, n, "rm", "^-[fv]+$"); continue }
     if (cmd == "rmdir") { filecheck(s, n, "rmdir", "^-v+$"); continue }
@@ -414,7 +414,7 @@ END {
   if (length(GOT["command"]) > 20000) { print "block\tlong\t"; exit }
   blocked = 0; tokenize(GOT["command"])
   if (!blocked) evalsegs()
-  # removed, moved-away or touched paths must be strictly inside; destinations may be .claude/butler itself
+  # removed, moved-away or touched paths must be strictly inside; destinations may be .butler itself
   if (!blocked) for (k = 1; k <= nin; k++) { key = (WHAT[k] ~ /^(rm|rmdir|mvsrc|touch|tee)$/) ? "file" : "inside"; print key "\t" IN[k] }
 }
 '
@@ -473,7 +473,7 @@ physical() {
 
 # True if path $1 (relative ones are taken from directory $2) lands inside $butler,
 # read both the lexical way (Write/Edit) and the kernel way (mkdir/cp). With $3 = dir,
-# $butler itself also counts (mkdir .claude/butler, cp x .claude/butler/).
+# $butler itself also counts (mkdir .butler, cp x .butler/).
 in_butler() {
   _x=$1
   case $_x in
@@ -531,7 +531,7 @@ esac
 
 root=$(to_posix "${CLAUDE_PROJECT_DIR:-${cwd:-$PWD}}")
 base=$(to_posix "${cwd:-$root}")
-butler=$(physical "$(lexical "$root/.claude/butler")") || ask "$M_PARSE"
+butler=$(physical "$(lexical "$root/.butler")") || ask "$M_PARSE"
 
 if [ "$tool" = Bash ]; then
   case $bcode in subst | subshell | heredoc | assign | syntax | unverifiable | cdwrite | long | interp) kind=form ;; *) kind= ;; esac

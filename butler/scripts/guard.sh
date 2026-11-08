@@ -3,9 +3,9 @@
 #
 # 用户输入 /butler 之后，Claude Code 在本会话主线程每次调用 Bash、Write、Edit、
 # MultiEdit、NotebookEdit、PowerShell 之前运行这个脚本，把调用信息（JSON）从 stdin 传进来。
-# - 写文件：目标在 <项目根>/.claude/butler/ 里才放行。
+# - 写文件：目标在 <项目根>/.butler/ 里才放行。
 # - Bash：只放行「角色边界」里列的只读查看命令；复合命令每一段都要在白名单里。
-#   输出重定向、heredoc、mkdir、cp、mv、rm、touch、tee 只能落在 .claude/butler/ 里。
+#   输出重定向、heredoc、mkdir、cp、mv、rm、touch、tee 只能落在 .butler/ 里。
 # - subagent 里的调用（输入带 agent_id）一律不管。
 # 不放行时返回 "ask"：Claude Code 弹出权限确认，由用户决定。用户说过"你直接改"就批准，
 # 否则拒绝。bypassPermissions 模式下改为返回 "deny"：这个模式下，目标在 .claude/、.git/
@@ -17,12 +17,12 @@
 M_PREFIX='管家守卫：'
 M_SEP=''
 M_TICKET='请把这件事开成工单派给 Worker。'
-M_FORM='如果这一步只是写 .claude/butler/ 里的文件或只读查询，换成直白写法再试（用写文件或编辑的工具，或路径写全、不用变量和 $(...)）；否则请把这件事开成工单派给 Worker。'
+M_FORM='如果这一步只是写 .butler/ 里的文件或只读查询，换成直白写法再试（用写文件或编辑的工具，或路径写全、不用变量和 $(...)）；否则请把这件事开成工单派给 Worker。'
 M_ASK='这一步要用户在确认框里亲自批准：用户在本窗口明确说过"你直接改"才批准，否则拒绝。'
 M_DENY='当前是 bypassPermissions 模式，守卫没法弹窗问用户，只能直接拒绝；用户真要管家自己改，得先切换到别的权限模式。'
-M_WRITE='管家窗口只能写 .claude/butler/ 下的文件，这次要写的是 '
+M_WRITE='管家窗口只能写 .butler/ 下的文件，这次要写的是 '
 M_BASH='管家窗口只能跑只读查看命令，这条不行：'
-M_BASH_OK='。允许的有：ls、cat、head、tail、wc、pwd、cd、echo、grep、rg、find、sort、uniq、diff、cmp、comm、stat、du、realpath、basename、dirname、which、command -v、sed -n 按行号打印、工具 --version；git status、git diff --stat、git diff --name-only、git log、git show、git ls-files、git rev-parse、git branch、git worktree list（可加 -C <路径>）；在 .claude/butler/ 里 mkdir、cp、mv、rm、touch、tee、输出重定向和 heredoc。'
+M_BASH_OK='。允许的有：ls、cat、head、tail、wc、pwd、cd、echo、grep、rg、find、sort、uniq、diff、cmp、comm、stat、du、realpath、basename、dirname、which、command -v、sed -n 按行号打印、工具 --version；git status、git diff --stat、git diff --name-only、git log、git show、git ls-files、git rev-parse、git branch、git worktree list（可加 -C <路径>）；在 .butler/ 里 mkdir、cp、mv、rm、touch、tee、输出重定向和 heredoc。'
 M_STOP='。'
 M_PS='管家窗口不解析 PowerShell 命令，一律先问你。'
 M_PARSE='看不懂这次调用的参数，先问你。'
@@ -36,7 +36,7 @@ detail() {
     opt) printf '选项或参数 %s 会写文件或执行命令' "$2" ;;
     sed) printf 'sed 只允许 -n 加行号打印（如 sed -n 12,40p 文件），这条是 %s' "$2" ;;
     fileargs) printf '%s 缺少文件参数' "$2" ;;
-    interp) printf '%s 能执行任意代码；改 .claude/butler/ 里的文件请用写文件或编辑的工具' "$2" ;;
+    interp) printf '%s 能执行任意代码；改 .butler/ 里的文件请用写文件或编辑的工具' "$2" ;;
     assign) printf '命令前带环境变量赋值 %s' "$2" ;;
     cmd) printf '不在白名单的命令 %s' "$2" ;;
     gitopt) printf 'git 选项 %s' "$2" ;;
@@ -48,7 +48,7 @@ detail() {
     cdwrite) printf 'cd 之后再用 %s 写文件，无法核对路径' "$2" ;;
     follow) printf 'tail %s 会一直挂着' "$2" ;;
     unverifiable) printf '路径 %s 里有变量或通配符，无法核对' "$2" ;;
-    outside) printf '%s 不在 .claude/butler/ 里' "$2" ;;
+    outside) printf '%s 不在 .butler/ 里' "$2" ;;
     long) printf '命令太长，无法检查' ;;
     *) printf '引号不配对或语法看不懂 %s' "$2" ;;
   esac
@@ -290,7 +290,7 @@ function cpcheck(s, n,   j, a, endopt, cnt, last) {
   if (cnt < 2) { block("cpargs", ""); return }
   inside(last, "cp", s)
 }
-# Commands that only touch files: every non-option argument must land inside .claude/butler/.
+# Commands that only touch files: every non-option argument must land inside .butler/.
 function filecheck(s, n, what, optre,   j, a, endopt, cnt) {
   endopt = 0; cnt = 0
   for (j = 2; j <= n && !blocked; j++) {
@@ -358,7 +358,7 @@ function evalsegs(   s, n, k, cmd, cdseg, pos) {
     if (cmd == "command") { if (n >= 3 && (W[s, 2] == "-v" || W[s, 2] == "-V")) continue; block("cmd", cmd); return }
     # tool version probes such as java -version or node --version (bare command names only)
     if (n == 2 && (W[s, 2] == "--version" || W[s, 2] == "-version") && cmd !~ /\//) continue
-    # files of the butler itself: create, append, move and delete inside .claude/butler/ only
+    # files of the butler itself: create, append, move and delete inside .butler/ only
     if (cmd == "touch") { filecheck(s, n, "touch", "^-[acm]+$"); continue }
     if (cmd == "rm") { filecheck(s, n, "rm", "^-[fv]+$"); continue }
     if (cmd == "rmdir") { filecheck(s, n, "rmdir", "^-v+$"); continue }
@@ -409,7 +409,7 @@ END {
   if (length(GOT["command"]) > 20000) { print "block\tlong\t"; exit }
   blocked = 0; tokenize(GOT["command"])
   if (!blocked) evalsegs()
-  # removed, moved-away or touched paths must be strictly inside; destinations may be .claude/butler itself
+  # removed, moved-away or touched paths must be strictly inside; destinations may be .butler itself
   if (!blocked) for (k = 1; k <= nin; k++) { key = (WHAT[k] ~ /^(rm|rmdir|mvsrc|touch|tee)$/) ? "file" : "inside"; print key "\t" IN[k] }
 }
 '
@@ -468,7 +468,7 @@ physical() {
 
 # True if path $1 (relative ones are taken from directory $2) lands inside $butler,
 # read both the lexical way (Write/Edit) and the kernel way (mkdir/cp). With $3 = dir,
-# $butler itself also counts (mkdir .claude/butler, cp x .claude/butler/).
+# $butler itself also counts (mkdir .butler, cp x .butler/).
 in_butler() {
   _x=$1
   case $_x in
@@ -526,7 +526,7 @@ esac
 
 root=$(to_posix "${CLAUDE_PROJECT_DIR:-${cwd:-$PWD}}")
 base=$(to_posix "${cwd:-$root}")
-butler=$(physical "$(lexical "$root/.claude/butler")") || ask "$M_PARSE"
+butler=$(physical "$(lexical "$root/.butler")") || ask "$M_PARSE"
 
 if [ "$tool" = Bash ]; then
   case $bcode in subst | subshell | heredoc | assign | syntax | unverifiable | cdwrite | long | interp) kind=form ;; *) kind= ;; esac

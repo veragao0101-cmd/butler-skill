@@ -30,7 +30,7 @@ So this project **borrows the design principles, not the infrastructure**:
 
 | Super-agent practice | Adopted? | What it looks like in butler |
 |---|---|---|
-| The Router only coordinates, never executes | ✅ | The butler session writes only the ledger, tickets, contracts and rules under `.claude/butler/` — no project files, no builds, no screenshots |
+| The Router only coordinates, never executes | ✅ | The butler session writes only the ledger, tickets, contracts and rules under `.butler/` — no project files, no builds, no screenshots |
 | Enforce delegation by structure, not by encouraging prompts | ✅ | With a neutral prompt, DeepSeek's experiment saw 0 delegations in 5 runs, so here it's a hard rule, backed by a hook that asks you before the butler session writes project files or runs commands |
 | Isolated, parallel Workers | ✅ | Separate sub-sessions you can see by default (worktrees in git projects), at most 3 writing code and 5 in total |
 | Ticket + Mandate | ✅ | One ticket per subtask, with an explicit mandate; external content can't widen it |
@@ -178,7 +178,7 @@ The Chinese edition lives in [`butler/`](butler/) and installs as the plugin `bu
 
 Butler mode starts only when you type `/butler` yourself; Claude never switches a session into it on its own.
 
-On first use, the butler sets up `.claude/butler/` in your project:
+On first use, the butler sets up `.butler/` in your project:
 
 | File | Purpose |
 |---|---|
@@ -190,7 +190,7 @@ On first use, the butler sets up `.claude/butler/` in your project:
 
 **One ledger per topic**: when several unrelated things are going on, each gets its own topic, isolated from the others. `/butler migration continue` reads only `migration/` and `rules.md`. Keep one butler session per topic. With a single topic you can leave out the name; with several and no name, the butler lists them and asks.
 
-In git projects, `.claude/butler/` comes with its own `.gitignore`, so it stays out of git and Workers' worktrees don't get stale copies. To commit the ledger as well, just delete that `.gitignore`.
+In git projects, `.butler/` comes with its own `.gitignore`, so it stays out of git and Workers' worktrees don't get stale copies. To commit the ledger as well, just delete that `.gitignore`.
 
 ### Requirements
 
@@ -201,9 +201,9 @@ In git projects, `.claude/butler/` comes with its own `.gitignore`, so it stays 
 
 ## Limitations
 
-- The butler session's boundaries are enforced by a PreToolUse hook that ships with the skill (`scripts/guard.sh`). When the butler tries to write a file outside `.claude/butler/`, or run a command outside its read-only allowlist, Claude Code asks you first. Approve if you want the butler to do it itself; deny, and it turns the work into a ticket. Worker sub-sessions and subagents aren't affected.
-  - **Let through**: read-only commands for looking at files and the environment (`grep`, `rg`, `find`, `sort`, `uniq`, `diff`, `stat`, `du`, `which`, `command -v`, `sed -n` printing line ranges, version probes such as `java -version`, and so on), git queries that don't change the repository, and the butler keeping its own files under `.claude/butler/` with `>`, heredocs, `mkdir`, `cp`, `mv`, `rm`, `touch` and `tee`.
-  - **Asks you**: writing files outside `.claude/butler/`; interpreters that can run arbitrary code, such as `python` or `node`; builds, tests and servers; forms that change files, such as `sed -i`, `find -delete` or `sort -o`.
+- The butler session's boundaries are enforced by a PreToolUse hook that ships with the skill (`scripts/guard.sh`). When the butler tries to write a file outside `.butler/`, or run a command outside its read-only allowlist, Claude Code asks you first. Approve if you want the butler to do it itself; deny, and it turns the work into a ticket. Worker sub-sessions and subagents aren't affected.
+  - **Let through**: read-only commands for looking at files and the environment (`grep`, `rg`, `find`, `sort`, `uniq`, `diff`, `stat`, `du`, `which`, `command -v`, `sed -n` printing line ranges, version probes such as `java -version`, and so on), git queries that don't change the repository, and the butler keeping its own files under `.butler/` with `>`, heredocs, `mkdir`, `cp`, `mv`, `rm`, `touch` and `tee`.
+  - **Asks you**: writing files outside `.butler/`; interpreters that can run arbitrary code, such as `python` or `node`; builds, tests and servers; forms that change files, such as `sed -i`, `find -delete` or `sort -o`.
 
   The guard has limits:
   - It's active from the moment you type `/butler` until the session ends. Resuming an old session (`--resume`, `--continue`, or reopening it) doesn't bring it back; type `/butler continue` again.
