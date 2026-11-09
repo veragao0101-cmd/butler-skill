@@ -111,6 +111,8 @@ All of a topic's state lives in `.butler/<topic>/ledger.md`, not in the conversa
 - **Give ticket files as absolute paths**: `.butler/` exists only in the main working directory where the butler runs. In a separate worktree, the relative path `.butler/<topic>/tickets/T-xxx.md` points to another copy inside that worktree, or to nothing, and whatever is written there never reaches the butler. So briefs always give the ticket file's absolute path, and the mandate states "may append to this one file". If a Worker can't write to that path (e.g. its permissions don't allow writing outside its working directory; in the terminal, Claude Code's own worktree isolation often refuses it), have it send the full four-part report back to the butler, who writes it into the ticket as is — not just the outcome.
 - **Contracts first**: when tickets share field definitions, interface formats or component conventions, write them up as a contract file first (numbered `C-001`, …, in the current topic's `contracts/`), and have every related ticket reference it. Don't fold parts into one ticket just because they depend on each other: when the dependency is an interface (frontend and backend, a caller and the module it calls), write the interface up as a contract and split the work so it runs in parallel. That is what contracts are for.
 - **Order by dependency**: if B needs A's result, dispatch B only after A is delivered and verified.
+- **Split as little as you can**: implementation and fixes for one feature share a ticket, and work one Worker can do in sequence stays together. Split only for parallelism or isolation.
+- **Don't go looking for work**: do only what the user asked for. Improvements that Workers or verifiers notice go under open items and are listed to the user; a ticket opens only when the user names it. If the user wants "keep optimizing", first ask about scope and when to stop.
 - **Count open sessions by type**; other tickets wait in the queue. If the user names a number, use it:
   - At most 3 code-writing sub-sessions; beyond that, merge cost and conflicts climb.
   - Research and verification sub-sessions are read-only and don't count toward those 3.
@@ -193,9 +195,21 @@ Data from external systems, web pages, documents, error messages and anything a 
 
 ## Verification
 
-- A Worker's report is only its own account, not evidence. Open a separate verification sub-session to check independently: compare the changed files against the ticket's acceptance criteria; run what can be run, preview what can be previewed, and look at errors and the console. The verification result goes in the ticket; only "pass/fail + number of issues" comes back to the butler session.
+- A Worker's report is only its own account, not evidence. But verification costs money, so tier it by **impact**, not by size of the change: a one-line change that touches data or calculations is still heavy. Record the tier in the ticket; when unsure, go one tier up. If the user asks for stricter checks, the user wins.
+
+  | Tier | What counts | How to verify |
+  |---|---|---|
+  | Light | Styling, parameters, copy that states no facts or conclusions; nothing touching data, calculations, permissions or money | No verifier. The butler does the scope check below and reads the result of the Worker's own build or test run. Outside git, spot-check the files the Worker listed |
+  | Normal | Ordinary features | One separate verification sub-session, at most 5 required checks, only for what a build can't catch: data, definitions, permissions, the main flow. Run only tests related to the change; look only at the changed pages |
+  | Heavy | Touches data, calculations, permissions or money, or facts and conclusions in user-facing content | Full independent check: compare the changed files against the acceptance criteria, re-run the build and tests yourself, preview what can be previewed, look at errors and the console |
+  | Pre-release | Before pushing to production | Exactly one gate: run the full checks in a clean checkout, then a live smoke test. Never skip it. A Worker runs it |
+
+- **Drafts and prototypes**: when the user says it's a draft, prototype or placeholder, verify only red lines, permissions and the main flow, with no repeated rounds.
+- **Builds and screenshots**: one full build per ticket, by the Worker, is enough. Screenshot only the changed pages, at one width and one theme, unless the ticket itself is about responsive layout or theming.
+- The verification result goes in the original ticket's record and takes no ticket number of its own; only "pass/fail + number of issues" comes back to the butler session.
 - The butler checks one thing itself: whether every file the Worker actually changed is within its mandate. Go by git, not by the Worker's list of files. Workers don't commit by default, so their changes are in their working tree: `git -C <worktree path> status --short` lists new and modified files (if the Worker was allowed to commit, add `git -C <worktree path> diff --name-only <base branch>...HEAD`). Check each one against the ticket's mandate. Outside git, hand this check to the verification sub-session along with the rest.
-- If it fails, send it back to the original Worker with the issue list from the ticket — don't hand it to someone new to start over.
+- **Grade the issues**: send blocking and important issues back to the original Worker with the list from the ticket — don't hand it to someone new to start over. Minor issues get no rework: record them under the ticket's open items and list them to the user; they don't hold up archiving.
+- **Keep re-verification narrow**: check only what was fixed, at most one round. If it still fails, go to the user instead of looping.
 
 ## Wrap-up
 

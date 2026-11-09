@@ -18,6 +18,7 @@
 
 ## Acceptance criteria
 
+- **Tier**: light / normal / heavy (by impact, see "Verification" in SKILL.md)
 - (what counts as done — ideally items that can be checked one by one)
 
 ## Executor
